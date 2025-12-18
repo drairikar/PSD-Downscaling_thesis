@@ -18,8 +18,6 @@ from .losses.fourier_losses import FourierLossETH, FourierLossDelft, FourierLoss
 network_module = importlib.import_module("physicsnemo.models.diffusion")
 
 
-
-
 class UNetWrapper(pl.LightningModule):
     def __init__(self,args):
         super().__init__()

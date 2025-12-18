@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 # Third-party
 import pytorch_lightning as pl
+from pytorch_lightning import loggers as pl_loggers
 import torch
 from lightning_fabric.utilities import seed
 
@@ -388,11 +389,11 @@ def main(args):
     )
     
     if config.wandb_project is not None:
-        logger = pl.loggers.WandbLogger(
+        logger = pl_loggers.WandbLogger(
             project=config.wandb_project, name=run_name, config=config
         )
     else:
-        logger = pl.loggers.TensorBoardLogger(
+        logger = pl_loggers.TensorBoardLogger(
             save_dir="DebugLogs/", name=run_name
         )  # or CSVLogger
 
@@ -419,7 +420,7 @@ def main(args):
     )
 
     # Only init once, on rank 0 only
-    if trainer.global_rank == 0 and isinstance(logger, pl.loggers.WandbLogger):
+    if trainer.global_rank == 0 and isinstance(logger, pl_loggers.WandbLogger):
         utils.init_wandb_metrics(logger)  # Do after wandb.init
 
     if config.eval:
