@@ -14,6 +14,7 @@ import torch.nn.functional as F
 
 import xarray as xr
 import pandas as pd
+
     
 class ERA5toCERRA2(torch.utils.data.Dataset):
     """
@@ -78,9 +79,12 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
             if self.mode in ("both", "CERRA_only"):
                 ds_stats_CERRA = utils.load_dataset_stats(dataset_name_CERRA, "cpu")
                 self.data_mean_CERRA, self.data_std_CERRA = ds_stats_CERRA["data_mean"], ds_stats_CERRA["data_std"]
+                print("CERRA path: ", self.sample_dir_path_CERRA)
+                
             if self.mode in ("both", "ERA5_only"):
                 ds_stats_era5 = utils.load_dataset_stats(dataset_name_ERA5, "cpu")
                 self.data_mean_era5, self.data_std_era5 = ds_stats_era5["data_mean"], ds_stats_era5["data_std"]
+                print("ERA5 path: ", self.sample_dir_path_era5)
         
         # If subsampling should occur (only during training)
         self.random_subsample = (split == "train")
@@ -129,10 +133,10 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
                 }
                 #return also the names of the samples
                 
-                return sample_CERRA, sample_era5, diz_stats, sample_name_CERRA
+                return  sample_era5, sample_CERRA ,diz_stats, sample_name_CERRA
             
             else:
-                return sample_CERRA, sample_era5
+                return  sample_era5, sample_CERRA
         
         elif self.mode == "CERRA_only":
             sample_name_CERRA = self.sample_names_CERRA[idx]
@@ -179,3 +183,6 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
 
         # 4) drop the batch dim
         return upsampled.squeeze(0)                      # [C, H_new, W_new]
+        
+class CerraEra5SuperResDataset(ERA5toCERRA2):
+    pass

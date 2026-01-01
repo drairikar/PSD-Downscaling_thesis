@@ -33,11 +33,11 @@ VARS = ['u10', 'v10', 't2m', 'vorticity', 'divergence', 'k-energy'] #, 'sshf', '
 CHANNEL_MAP = {var: i for i, var in enumerate(VARS)}  # adjust if order differs
 
 CERRA_PATH = pathlib.Path(
-    "/projects/0/prjs1154/CentralEurope_2014_2020/CERRA/samples/test"
+    "/aspire/CarloData/NeurIPS-workshop/CentralEurope_2014_2020/CERRA/samples/test" 
 )
 
 ERA5_PATH = pathlib.Path(
-    "/projects/0/prjs1154/CentralEurope_2014_2020/ERA5/samples/test"
+    "/aspire/CarloData/NeurIPS-workshop/CentralEurope_2014_2020/ERA5/samples/test"
 )
 
 MODEL_PATHS: Dict[str, pathlib.Path] = {

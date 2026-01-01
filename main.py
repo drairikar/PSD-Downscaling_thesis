@@ -308,6 +308,9 @@ def get_args():
 def main(args):
     # Convert legacy args to new config system
     print("🔧 Using new configuration system with validation...")
+    print("Raw dataset args:")
+    print("  args.dataset_cerra =", args.dataset_cerra)
+    print("  args.dataset_era5  =", args.dataset_era5)
     
     try:
         config = convert_legacy_config_to_new(args)
@@ -319,6 +322,9 @@ def main(args):
             return
         
         print("🔄 Using new configuration system directly")
+        
+        print("CERRA: ", config.dataset.cerra_path)
+        print("ERA5: ", config.dataset.era5_path)
         
     except Exception as e:
         print(f"❌ Configuration validation failed: {e}")

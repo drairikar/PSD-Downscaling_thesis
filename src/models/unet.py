@@ -18,12 +18,11 @@ from .losses.fourier_losses import FourierLossETH, FourierLossDelft, FourierLoss
 network_module = importlib.import_module("physicsnemo.models.diffusion")
 
 
-
-
 class UNetWrapper(pl.LightningModule):
     def __init__(self,args):
         super().__init__()
         
+              
         # for compatibility with older versions that took only 1 dimension
         if isinstance(args.img_resolution, int):
             self.img_shape_x = self.img_shape_y = args.img_resolution
@@ -102,10 +101,25 @@ class UNetWrapper(pl.LightningModule):
         ValueError
             If the model output dtype doesn't match the expected dtype.
         """
+        print(f"x.shape: {x.shape}, img_lr.shape: {img_lr.shape}")
+        
+        expected_hw = (self.img_shape_y, self.img_shape_x)
+        
+        if img_lr is not None and img_lr.shape[-2:] != expected_hw:
+            raise ValueError(
+                f"Low-resolution image has shape {img_lr.shape[-2:]}, "
+                f"but expected {expected_hw}."
+            )
+            
+        if x.shape[-2:] != expected_hw:
+            raise ValueError(
+                f"Input tensor has shape {x.shape[-2:]}, "
+                f"but expected {expected_hw}."
+            )
+  
         # SR: concatenate input channels
         if img_lr is not None:
             x = torch.cat((x, img_lr), dim=1)
-
 
         F_x = self.model(
             x,  # (c_in * x).to(dtype),
@@ -163,6 +177,7 @@ class UNetWrapper(pl.LightningModule):
         # Plot some example predictions using prior and encoder
         if (
             self.trainer.is_global_zero
+            and (not self.trainer.sanity_checking) ##avoid plotting during sanity check
             and batch_idx == 0
             and self.current_epoch % 10 == 0
             and self.wandb_project is not None
@@ -172,8 +187,8 @@ class UNetWrapper(pl.LightningModule):
     
     def test_step(self, batch, batch_idx: int) -> dict:
         """
-        Evaluate model on a test batch, save un‐normalized predictions if requested,
-        and compute metrics on the un‐normalized data.
+        Evaluate model on a test batch, save un-normalized predictions if requested,
+        and compute metrics on the un-normalized data.
         """
         # Unpack batch
         # img_clean: (B, C, H, W)
@@ -295,9 +310,25 @@ class UNetWrapper(pl.LightningModule):
         # Plot samples
         log_plot_dict = {}
 
-        var_i = random.randint(0, len(constants.PARAM_NAMES_SHORT_CERRA) - 1)
-        var_name = constants.PARAM_NAMES_SHORT_CERRA[var_i]
-        var_unit = constants.PARAM_UNITS_CERRA[var_i]
+        n_channels = prediction.shape[-1]
+        if n_channels < 1:
+            return
+        var_i = random.randint(0, n_channels - 1)
+        
+        var_name = (
+            constants.PARAM_NAMES_SHORT_CERRA[var_i]
+            if var_i < len(constants.PARAM_NAMES_SHORT_CERRA)
+            else f"var_{var_i}"
+        )
+        var_unit = (
+            constants.PARAM_UNITS_CERRA[var_i]
+            if var_i < len(constants.PARAM_UNITS_CERRA)
+            else ""
+        )
+                
+        # var_i = random.randint(0, len(constants.PARAM_NAMES_SHORT_CERRA) - 1)
+        # var_name = constants.PARAM_NAMES_SHORT_CERRA[var_i]
+        # var_unit = constants.PARAM_UNITS_CERRA[var_i]
         
         sample = random.randint(0, prediction.shape[0] - 1)
 
@@ -380,12 +411,22 @@ class UNetWrapper(pl.LightningModule):
         fig.suptitle(f"{var_name} ({var_unit})", fontsize=16)
 
         # Save the figure (e.g. into "plot_tests/")
-        save_dir = self.savepreds_path + "/" + self.load.split("/")[-2] + "/pred_plots"
+        # save_dir = self.savepreds_path + "/" + self.load.split("/")[-2] + "/pred_plots"
+        # os.makedirs(save_dir, exist_ok=True)
+        # fname = os.path.join(save_dir, f"{var_name}_sample_{sample_idx}.png")
+        # fig.savefig(fname, bbox_inches='tight')
+        # plt.close(fig)
+        
+        if not self.savepreds_path:
+            plt.close(fig)
+            return
+
+        run_name = self.load.split("/")[-2]
+        save_dir = os.path.join(self.savepreds_path, run_name, "pred_plots")
         os.makedirs(save_dir, exist_ok=True)
         fname = os.path.join(save_dir, f"{var_name}_sample_{sample_idx}.png")
         fig.savefig(fname, bbox_inches='tight')
         plt.close(fig)
-    
     
 class RegressionLoss:
     """
