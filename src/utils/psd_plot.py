@@ -17,6 +17,7 @@ Assumptions
 
 Dependencies: numpy, matplotlib
 """
+##calculate time
 
 from __future__ import annotations
 import pathlib
@@ -41,18 +42,18 @@ ERA5_PATH = pathlib.Path(
 )
 
 MODEL_PATHS: Dict[str, pathlib.Path] = {
-    "Full-CorrDiff"     : pathlib.Path("/projects/0/prjs1154/CentralEurope_2014_2020/preds_20142020_1dFFT/CorrDiffusion-0-Diffusion-06_24_17-8376/files"),
-    #"SongUNet01"   : pathlib.Path("/aspire/CarloData/zz_UNETs/data/big_dataset/preds/UNet-CNN-01-UNet-CNN-06_09_11-4102/files"),
-    "Regression-CorrDiff"  : pathlib.Path("/projects/0/prjs1154/CentralEurope_2014_2020/preds_20142020_1dFFT/UNet-CNN-0-UNet-CNN-06_17_15-9228/files"),
-    #"SongUNet0001" : pathlib.Path("/aspire/CarloData/zz_UNETs/data/big_datase/tpreds/UNet-CNN-0001-UNet-CNN-06_09_11-3299/files"),
-    #"GNNUNet"      : pathlib.Path("/aspire/CarloData/zz_UNETs/data/big_dataset/preds/UNet-GNN-BigData-graph_efm-4x64-05_22_10-8678/files"),
-    "CRPS-UNets"  : pathlib.Path("/projects/0/prjs1154/CentralEurope_2014_2020/preds_20142020_2dFFT/CRPSresume-UNet-CNN-07_14_10-5016/files"),
+    
+    # "FNO": pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/FNO-downscaling-reduced-model-FNO-01_08_23-7439/files"),
+    "UNet_PSDLoss": pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/files"),
+    "FNO_PSDLoss" : pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/files"),
+    "FNO_RRDB" :  pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/FNO-rrdb-FNO-01_19_15-6538/FNO-rrdb-FNO-01_19_15-6538/files")
+    # "UNet-CNN": pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/UNet-resume-lastckpt-UNet-CNN-01_12_11-3658/UNet-resume-lastckpt-UNet-CNN-01_12_11-3658/files"),
 }
 
 ERA5_DX_DEG = 25                       # longitude spacing of reference grid
 N_BINS = 200                             # PDF histogram resolution
 EPS = 1e-12                              # avoids log(0)
-OUT_DIR = pathlib.Path("plot_tests")
+OUT_DIR = pathlib.Path("plot_tests_RRDB")
 OUT_DIR.mkdir(exist_ok=True)
 
 # ──────────────────────────────────────────
@@ -86,6 +87,7 @@ def load_stack(path: pathlib.Path) -> np.ndarray:
         return _to_chan_last(np.load(path))
 
     files = sorted(path.glob("*.npy"))
+    # files = files[:10]
     if not files:
         raise FileNotFoundError(f"No *.npy under {path}")
     stack = np.array([np.load(f) for f in files])
@@ -97,7 +99,7 @@ def extract_var(stack: np.ndarray, var: str) -> np.ndarray:
     if var == 'vorticity':
         u = stack[..., CHANNEL_MAP['u10']]
         v = stack[..., CHANNEL_MAP['v10']]
-        print(u,)
+        # print(u,)
         return np.gradient(v, axis=2) - np.gradient(u, axis=1)
     elif var == 'divergence':
         u = stack[..., CHANNEL_MAP['u10']]
@@ -163,6 +165,7 @@ def main() -> None:
         plt.ylabel("PSD")
         plt.title(f"PSD of {var} (longitude)")
         plt.legend()
+        plt.grid(True, which="both", ls="--", lw=0.5)
         plt.tight_layout()
         out_psd = OUT_DIR / f"{var}_psd.png"
         plt.savefig(out_psd, dpi=200)
@@ -198,6 +201,7 @@ def main() -> None:
         plt.ylabel(r"$\log_{10}$ PDF")        # Y-axis = log10(PDF)
         plt.title(f"log₁₀ PDF of {var}")
         plt.legend(ncol=2)
+        plt.grid(True, which="both", ls="--", lw=0.5)
         plt.tight_layout()
 
         out_pdf = OUT_DIR / f"{var}_logpdf.png"
@@ -211,4 +215,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+
     main()

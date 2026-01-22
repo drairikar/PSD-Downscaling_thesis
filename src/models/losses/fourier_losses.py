@@ -313,7 +313,8 @@ if __name__ == '__main__':
     print(f'ETH Phase Loss: {phase_loss_ETH.item()}, Amplitude Loss: {amp_loss_ETH.item()}')
     print(f'Delft Phase Loss: {phase_loss_Delft.item()}, Amplitude Loss: {amp_loss_Delft.item()}')
     print(f'HK Correlation Loss: {corr_loss_HK.item()}, Amplitude Loss: {amp_loss_HK.item()}')
-    print(f'MSE Pixel Loss: {pix_loss_.item()}, Amplitude Loss: {amp_loss_.item()}')
+    print(f'MSE (Carlo) Pixel Loss: {pix_loss_.item()}, Amplitude Loss: {amp_loss_.item()}')
+    
     a=1
     
     

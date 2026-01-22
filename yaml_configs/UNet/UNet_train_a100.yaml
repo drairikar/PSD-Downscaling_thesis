@@ -11,7 +11,7 @@ load: null
 restore_opt: 1                     # 0 = do not restore optimizer
 precision: "16-mixed"              # 32 | 16 | 16-mixed | bf16
 eval: null                         # val | test | null → train
-wandb_project: finetune
+wandb_project: finetune-run-Unet
 run_name: UNet-CNN        # Optional run name
 
 # =========================

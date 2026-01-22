@@ -2,6 +2,7 @@
 import random
 import time
 from argparse import ArgumentParser
+import warnings
 
 # Third-party
 import pytorch_lightning as pl
@@ -11,11 +12,38 @@ from lightning_fabric.utilities import seed
 # First-party
 from src import constants, utils
 from src.models import UNetWrapper, DiffusionWrapper
+from src.models.fno_v1 import FNOWrapper
 from src.data import ERA5toCERRA2
 import os
+import tempfile
 import yaml
+from pathlib import Path
+import multiprocessing as mp
 
-# NEW: Import new configuration system (optional)
+try:
+    mp.set_start_method("spawn", force=True)
+except RuntimeError:
+    pass
+
+
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+local_tmp = os.path.join(os.path.expanduser("~"), "PSD_outputs", "pl_logs")
+local_tmp = Path.home() / "PSD_outputs" / "tmp"
+os.makedirs(local_tmp, exist_ok=True)
+os.environ["TMPDIR"] = str(local_tmp)
+os.environ["TEMP"] = str(local_tmp)
+os.environ["TMP"] = str(local_tmp)
+tempfile.tempdir = str(local_tmp)
+
+# print("TMPDIR:", tempfile.gettempdir())
+os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning, ignore::UserWarning"
+
+warnings.filterwarnings("ignore", message=".*warp.*")
+warnings.filterwarnings("ignore", message=".*physicsnemo.utils.generative.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="pytorch_lightning")
+
+
 try:
     import sys
     from pathlib import Path
@@ -32,9 +60,9 @@ except ImportError:
 
 MODELS = {
     "UNet-CNN": UNetWrapper,
-    "Diffusion": DiffusionWrapper
+    "Diffusion": DiffusionWrapper,
+    "FNO": FNOWrapper
 }
-
 
 def get_args():
     """
@@ -152,43 +180,89 @@ def get_args():
     )
     ########################################################
     # MODEL #
+    
     parser.add_argument(
-        "--N_grid_channels",  
+        "--num_fno_layers",  
         type=int,
         default=4,
-        help="Number of grid channels",
+        help="Number of FNO layers",
     )
     parser.add_argument(
-        "--embedding_type",  
-        type=str,
-        default="zero",
-        help="List of output variables to predict",
-    )
-    parser.add_argument(
-        "--model_channels",  
+        "--fno_layer_size",  
         type=int,
-        default=64,
-        help="Number of model channels",
+        default=32,
+        help="Size of FNO layers",
     )
     parser.add_argument(
-        "--channel_mult",  
-        type=list,
-        default=[1, 2, 2],
-        help="List of channel multipliers",
+        "--num_fno_modes",  
+        type=int,
+        default=16,
+        help="Number of FNO modes",
     )
     parser.add_argument(
-        "--attn_resolutions",  
-        type=list,
-        default=[16],
-        help="List of attention resolutions",
+        "--fno_padding",  
+        type=int,
+        default=8,
+        help="FNO padding size",
     )
     parser.add_argument(
-        "--model_type",  
-        type=str,
-        default="SongUNetPosEmbd",
-        help="List of attention resolutions",
+        "--coord_features",  
+        type=bool,
+        default=True,
+        help="Use coordinate features",
     )
-    ########################################################
+    parser.add_argument(
+        "--decoder_layers",  
+        type=int,
+        default=4,
+        help="Number of decoder layers",
+    )
+    parser.add_argument(
+        "--decoder_layer_size",  
+        type=int,
+        default=32,
+        help="Size of decoder layers",
+    )
+    #######################################################
+    # # UNet-MODEL (legacy args, commented out for FNO)
+        
+    # parser.add_argument(
+    #     "--N_grid_channels",  
+    #     type=int,
+    #     default=4,
+    #     help="Number of grid channels",
+    # )
+    # parser.add_argument(
+    #     "--embedding_type",  
+    #     type=str,
+    #     default="zero",
+    #     help="List of output variables to predict",
+    # )
+    # parser.add_argument(
+    #     "--model_channels",  
+    #     type=int,
+    #     default=64,
+    #     help="Number of model channels",
+    # )
+    # parser.add_argument(
+    #     "--channel_mult",  
+    #     type=list,
+    #     default=[1, 2, 2],
+    #     help="List of channel multipliers",
+    # )
+    # parser.add_argument(
+    #     "--attn_resolutions",  
+    #     type=list,
+    #     default=[16],
+    #     help="List of attention resolutions",
+    # )
+    # parser.add_argument(
+    #     "--model_type",  
+    #     type=str,
+    #     default="SongUNetPosEmbd",
+    #     help="List of attention resolutions",
+    # )
+    #######################################################
     # TRAINING #
     parser.add_argument(
         "--val_interval",
@@ -230,6 +304,7 @@ def get_args():
         default=0,
         help="Checkpoint level for the model (default: 1)",
     )
+
     parser.add_argument(
         "--regression_net",
         type=str,
@@ -304,6 +379,7 @@ def get_args():
         )
     
     return parser.parse_args()
+
 
 def main(args):
     # Convert legacy args to new config system
@@ -389,6 +465,7 @@ def main(args):
             filename="min_val_loss",
             monitor="val_loss",
             mode="min",
+            save_top_k=1,
             save_last=True,
         )
     )
@@ -420,6 +497,7 @@ def main(args):
         callbacks=callbacks,
         check_val_every_n_epoch=args.val_interval,
         precision=args.precision,
+        default_root_dir=local_tmp,
         # accumulate_grad_batches=4
         #profiler="simple",
     )
@@ -433,12 +511,14 @@ def main(args):
             ERA5toCERRA2(
                 config.dataset.cerra_path,
                 config.dataset.era5_path,
-                split="test",#TODO: Change to val
+                split="test",    #TODO: Change to val
                 subset=False,
             ),
             config.training.batch_size,
             shuffle=False,
             num_workers=config.training.n_workers,
+            persistent_workers=True if config.training.n_workers > 0 else False,
+            multiprocessing_context="spawn" if config.training.n_workers > 0 else None,
         )
 
         print(f"Running evaluation on {config.eval}")
@@ -456,6 +536,8 @@ def main(args):
             config.training.batch_size,
             shuffle=True,
             num_workers=config.training.n_workers,
+            persistent_workers=True if config.training.n_workers > 0 else False,
+            multiprocessing_context="spawn" if config.training.n_workers > 0 else None,
         )
         
         val_loader = torch.utils.data.DataLoader(
@@ -468,6 +550,8 @@ def main(args):
             config.training.batch_size,
             shuffle=False,
             num_workers=config.training.n_workers,
+            persistent_workers=True if config.training.n_workers > 0 else False,
+            multiprocessing_context="spawn" if config.training.n_workers > 0 else None,
         )
         # Train model
         trainer.fit(

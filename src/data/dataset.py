@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 # First-party
-from src import constants, utils
+from src import config, constants, utils
 
 import torch.nn.functional as F
 
@@ -35,6 +35,7 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         split,
         standardize=True,
         subset=False,
+                       
     ):
         super().__init__()
         
@@ -53,7 +54,7 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         member_file_regexp = "*.npy"
         
         self.split = split
-        
+                 
         # Load CERRA dataset if available.
         if self.mode in ("both", "CERRA_only"):
             self.sample_dir_path_CERRA = os.path.join("data", dataset_name_CERRA, "samples", split)
@@ -69,9 +70,9 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         # Optionally restrict to a subset of samples.
         if subset:
             if self.mode in ("both", "CERRA_only"):
-                self.sample_names_CERRA = self.sample_names_CERRA[:50]
+                self.sample_names_CERRA = self.sample_names_CERRA[:5000]
             if self.mode in ("both", "ERA5_only"):
-                self.sample_names_era5 = self.sample_names_era5[:50]
+                self.sample_names_era5 = self.sample_names_era5[:5000]
         
         # Set up standardization if requested.
         self.standardize = standardize
@@ -119,7 +120,8 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
             if self.standardize:
                 sample_CERRA = (sample_CERRA - self.data_mean_CERRA[:, None, None]) / self.data_std_CERRA[:, None, None]
                 sample_era5 = (sample_era5 - self.data_mean_era5[:, None, None]) / self.data_std_era5[:, None, None]
-                
+                     
+                    
             if self.split == "test":
                 mean_CERRA = self.data_mean_CERRA[:, None, None]
                 std_CERRA = self.data_std_CERRA[:, None, None]
@@ -177,7 +179,8 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         upsampled = F.interpolate(
             era5_batched,
             size=target_size,
-            mode='bilinear',
+            mode='bicubic',
+            # mode='bilinear',
             align_corners=False
         )                                                      # [1, C, H_new, W_new]
 

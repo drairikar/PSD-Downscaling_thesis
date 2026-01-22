@@ -44,19 +44,30 @@ def create_legacy_args_from_config(config: ExperimentConfig):
             self.img_out_channels = config.dataset.img_out_channels
             self.img_resolution = config.dataset.img_resolution
             self.subset_ds = config.dataset.subset_size or 0
-            
+          
+            #       
             # Model args
             self.model = config.model.model_type
             # model_type should be the actual class name from the YAML file
             # This comes from the top-level model_type field in the YAML
             self.model_type = getattr(config, 'model_type', None)
-            self.model_channels = config.model.model_channels
-            self.channel_mult = config.model.channel_mult
-            self.attn_resolutions = config.model.attn_resolutions
-            self.embedding_type = config.model.embedding_type
-            self.N_grid_channels = config.model.n_grid_channels
+            # self.model_channels = config.model.model_channels
+            # self.channel_mult = config.model.channel_mult
+            # self.attn_resolutions = config.model.attn_resolutions
+            # self.embedding_type = config.model.embedding_type
+            # self.N_grid_channels = config.model.n_grid_channels
+            
             self.checkpoint_level = config.model.checkpoint_level
             
+            self.num_fno_layers = config.model.num_fno_layers
+            self.fno_layer_size = config.model.fno_layer_size
+            self.num_fno_modes = config.model.num_fno_modes
+            self.fno_padding = config.model.fno_padding
+            self.coord_features = config.model.coord_features
+            self.decoder_layers = config.model.decoder_layers
+            self.decoder_layer_size = config.model.decoder_layer_size
+            
+             
             # Training args
             self.lr = config.training.lr
             self.epochs = config.training.epochs

@@ -257,7 +257,7 @@ class UNetWrapper(pl.LightningModule):
             pred_i = predictions[:, i, :, :]  # shape (B, H, W)
             gt_i   = ground_truth[:, i, :, :]
 
-            mse_val        = torch.mean((pred_i - gt_i) ** 2)
+            mse_val= torch.mean((pred_i - gt_i) ** 2)
             mse_vars[f"test_mse_{var_name}"] = mse_val
             mae_vars[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i))
             rmse_vars[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
@@ -290,8 +290,7 @@ class UNetWrapper(pl.LightningModule):
         self.plot_preds(predictions, ground_truth, img_lr, diz_stats)
 
         return log_metrics
-    
-    
+  
     
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)

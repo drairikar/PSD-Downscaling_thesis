@@ -13,10 +13,12 @@ import yaml
 import torch
 from enum import Enum
 
+
 class ModelType(Enum):
     """Supported model types."""
     UNET_CNN = "UNet-CNN"
     DIFFUSION = "Diffusion"
+    FNO = "FNO"
 
 class PrecisionType(Enum):
     """Supported precision types."""
@@ -35,7 +37,7 @@ class DatasetConfig:
     img_resolution: List[int] = field(default_factory=lambda: [300, 300])
     subset_size: Optional[int] = None
     standardize: bool = True
-    
+        
     def __post_init__(self):
         """Validate configuration after initialization."""
         self._validate()
@@ -61,14 +63,24 @@ class DatasetConfig:
 @dataclass
 class ModelConfig:
     """Model configuration with validation."""
-    model_type: str = "UNet-CNN"
-    model_channels: int = 64
-    channel_mult: List[int] = field(default_factory=lambda: [1, 2, 2])
-    attn_resolutions: List[int] = field(default_factory=lambda: [16])
-    embedding_type: str = "zero"
-    n_grid_channels: int = 4
-    checkpoint_level: int = 0
     
+    # model_type: str = "UNet-CNN"
+    # model_channels: int = 64
+    # channel_mult: List[int] = field(default_factory=lambda: [1, 2, 2])
+    # attn_resolutions: List[int] = field(default_factory=lambda: [16])
+    # embedding_type: str = "zero"
+    # n_grid_channels: int = 4
+    checkpoint_level: int = 0
+       
+    model_type: str = "FNO"
+    num_fno_layers: int = field(default=4, metadata={"description": "Number of FNO layers"})
+    fno_layer_size: int = field(default=64, metadata={"description": "Size of FNO layers"})
+    num_fno_modes: int = field(default=16, metadata={"description": "Number of Fourier modes"})
+    fno_padding: int = field(default=8, metadata={"description": "Padding for FNO"})
+    coord_features: bool = field(default=True, metadata={"description": "Use coordinate features"})
+    decoder_layers: int = field(default=1, metadata={"description": "Number of decoder layers"})
+    decoder_layer_size: int = field(default=32, metadata={"description": "Size of decoder layers"})
+   
     def __post_init__(self):
         """Validate model configuration."""
         self._validate()
@@ -81,18 +93,24 @@ class ModelConfig:
         except ValueError:
             raise ValueError(f"Unsupported model type: {self.model_type}")
         
+        # if self.apply_constraint:
+        #     if self.constraint_exp_factor <= 0:
+        #         raise ValueError("constraint_exp_factor must be positive when apply_constraint is True")
+        #     if self.upsample_factor <= 0:
+        #         raise ValueError("upsample_factor must be positive when apply_constraint is True")
+        
         # Validate embedding type
-        valid_embeddings = ["zero", "sinusoidal", "learnable", "linear"]
-        if self.embedding_type not in valid_embeddings:
-            raise ValueError(f"Invalid embedding type: {self.embedding_type}")
+        # valid_embeddings = ["zero", "sinusoidal", "learnable", "linear"]
+        # if self.embedding_type not in valid_embeddings:
+        #     raise ValueError(f"Invalid embedding type: {self.embedding_type}")
         
-        # Validate channel multipliers
-        if any(mult <= 0 for mult in self.channel_mult):
-            raise ValueError("Channel multipliers must be positive")
+        # # Validate channel multipliers
+        # if any(mult <= 0 for mult in self.channel_mult):
+        #     raise ValueError("Channel multipliers must be positive")
         
-        # Validate attention resolutions
-        if any(res <= 0 for res in self.attn_resolutions):
-            raise ValueError("Attention resolutions must be positive")
+        # # Validate attention resolutions
+        # if any(res <= 0 for res in self.attn_resolutions):
+        #     raise ValueError("Attention resolutions must be positive")
 
 @dataclass
 class TrainingConfig:
@@ -209,7 +227,8 @@ class ExperimentConfig:
         for key in ['img_in_channels', 'img_out_channels', 'img_resolution', 'standardize']:
             if key in config_dict:
                 dataset_params[key] = config_dict[key]
-        
+                
+            
         dataset_config = DatasetConfig(**dataset_params)
         
         # Create model config with proper parameter mapping
@@ -218,14 +237,28 @@ class ExperimentConfig:
         # Map legacy model parameters
         if 'model' in config_dict:
             model_params['model_type'] = config_dict['model']
-        if 'N_grid_channels' in config_dict:
-            model_params['n_grid_channels'] = config_dict['N_grid_channels']
+            
+        # if 'N_grid_channels' in config_dict:
+        #     model_params['n_grid_channels'] = config_dict['N_grid_channels']
         
-        # Add other model parameters
-        for key in ['model_channels', 'channel_mult', 'attn_resolutions',
-                   'embedding_type', 'checkpoint_level']:
-            if key in config_dict:
-                model_params[key] = config_dict[key]
+        # # Add other model parameters
+        # for key in ['model_channels', 'channel_mult', 'attn_resolutions',
+        #            'embedding_type', 'checkpoint_level']:
+        #     if key in config_dict:
+        #         model_params[key] = config_dict[key]
+        
+        for key in [
+            'num_fno_layers',
+            'fno_layer_size',
+            'num_fno_modes',
+            'fno_padding',
+            'coord_features',
+            'decoder_layers',
+            'decoder_layer_size',
+            'checkpoint_level',
+            ]:
+                if key in config_dict:
+                    model_params[key] = config_dict[key]
         
         model_config = ModelConfig(**model_params)
         
@@ -244,10 +277,15 @@ class ExperimentConfig:
             # Dataset keys
             'dataset_cerra', 'dataset_era5', 'subset_ds',
             'img_in_channels', 'img_out_channels', 'img_resolution', 'standardize',
+            'checkpoint_level',
             # Model keys
-            'model', 'N_grid_channels', 'model_channels', 'channel_mult', 
-            'attn_resolutions', 'embedding_type', 'checkpoint_level',
-            # Training keys
+            # 'model', 'N_grid_channels', 'model_channels', 'channel_mult', 
+            # 'attn_resolutions', 'embedding_type', 'checkpoint_level',
+            
+            'model', 'num_fno_layers', 'fno_layer_size', 'num_fno_modes', 'fno_padding', 
+            'coord_features', 'decoder_layers', 'decoder_layer_size',
+            
+            # # Training keys
             'lr', 'epochs', 'batch_size', 'val_interval', 'precision', 'n_workers',
             'seed', 'lr_decay', 'lr_rampup', 'grad_clip_threshold', 'anneal_epochs',
             'init_lambda', 'max_lambda', 'lambda_psd', 'loss_type'
