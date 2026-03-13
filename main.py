@@ -13,6 +13,8 @@ from lightning_fabric.utilities import seed
 from src import constants, utils
 from src.models import UNetWrapper, DiffusionWrapper
 from src.models.fno_v1 import FNOWrapper
+from src.models.UNO import UNOWrapper
+from src.models.Yang import DSFNOWrapper
 from src.data import ERA5toCERRA2
 import os
 import tempfile
@@ -25,15 +27,20 @@ try:
 except RuntimeError:
     pass
 
+# torch.use_deterministic_algorithms(True, warn_only=True)
+torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False)
 
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-local_tmp = os.path.join(os.path.expanduser("~"), "PSD_outputs", "pl_logs")
-local_tmp = Path.home() / "PSD_outputs" / "tmp"
-os.makedirs(local_tmp, exist_ok=True)
-os.environ["TMPDIR"] = str(local_tmp)
-os.environ["TEMP"] = str(local_tmp)
-os.environ["TMP"] = str(local_tmp)
-tempfile.tempdir = str(local_tmp)
+# if torch.cuda.is_available():
+#     torch.cuda.synchronize()
+
+# os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+# local_tmp = os.path.join(os.path.expanduser("~"), "PSD_outputs", "pl_logs")
+# local_tmp = Path.home() / "PSD_outputs" / "tmp"
+# os.makedirs(local_tmp, exist_ok=True)
+# os.environ["TMPDIR"] = str(local_tmp)
+# os.environ["TEMP"] = str(local_tmp)
+# os.environ["TMP"] = str(local_tmp)
+# tempfile.tempdir = str(local_tmp)
 
 # print("TMPDIR:", tempfile.gettempdir())
 os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning, ignore::UserWarning"
@@ -61,7 +68,9 @@ except ImportError:
 MODELS = {
     "UNet-CNN": UNetWrapper,
     "Diffusion": DiffusionWrapper,
-    "FNO": FNOWrapper
+    "FNO": FNOWrapper,
+    "UNO": UNOWrapper,
+    "DSFNO": DSFNOWrapper,
 }
 
 def get_args():
@@ -179,50 +188,51 @@ def get_args():
         help="Resolution of the input images",
     )
     ########################################################
-    # MODEL #
+    # FNO MODEL #
     
-    parser.add_argument(
-        "--num_fno_layers",  
-        type=int,
-        default=4,
-        help="Number of FNO layers",
-    )
-    parser.add_argument(
-        "--fno_layer_size",  
-        type=int,
-        default=32,
-        help="Size of FNO layers",
-    )
-    parser.add_argument(
-        "--num_fno_modes",  
-        type=int,
-        default=16,
-        help="Number of FNO modes",
-    )
-    parser.add_argument(
-        "--fno_padding",  
-        type=int,
-        default=8,
-        help="FNO padding size",
-    )
-    parser.add_argument(
-        "--coord_features",  
-        type=bool,
-        default=True,
-        help="Use coordinate features",
-    )
-    parser.add_argument(
-        "--decoder_layers",  
-        type=int,
-        default=4,
-        help="Number of decoder layers",
-    )
-    parser.add_argument(
-        "--decoder_layer_size",  
-        type=int,
-        default=32,
-        help="Size of decoder layers",
-    )
+    # parser.add_argument(
+    #     "--num_fno_layers",  
+    #     type=int,
+    #     default=4,
+    #     help="Number of FNO layers",
+    # )
+    # parser.add_argument(
+    #     "--fno_layer_size",  
+    #     type=int,
+    #     default=32,
+    #     help="Size of FNO layers",
+    # )
+    # parser.add_argument(
+    #     "--num_fno_modes",  
+    #     type=int,
+    #     default=16,
+    #     help="Number of FNO modes",
+    # )
+    # parser.add_argument(
+    #     "--fno_padding",  
+    #     type=int,
+    #     default=8,
+    #     help="FNO padding size",
+    # )
+    # parser.add_argument(
+    #     "--coord_features",  
+    #     type=bool,
+    #     default=True,
+    #     help="Use coordinate features",
+    # )
+    # parser.add_argument(
+    #     "--decoder_layers",  
+    #     type=int,
+    #     default=4,
+    #     help="Number of decoder layers",
+    # )
+    # parser.add_argument(
+    #     "--decoder_layer_size",  
+    #     type=int,
+    #     default=32,
+    #     help="Size of decoder layers",
+    # )
+
     #######################################################
     # # UNet-MODEL (legacy args, commented out for FNO)
         
@@ -262,6 +272,111 @@ def get_args():
     #     default="SongUNetPosEmbd",
     #     help="List of attention resolutions",
     # )
+    #####################################################
+    ##UNO model legacy args (commented out for FNO and UNet)
+
+    parser.add_argument(
+        "--hidden_channels",
+        type=int,
+        default=64,
+        help="Number of hidden channels in UNO",
+    )
+
+    parser.add_argument(
+        "--projection_channels",
+        type=int,
+        default=64,
+        help="Number of projection channels in UNO",
+    )
+
+    parser.add_argument(
+        "--lifting_channels",
+        type=int,
+        default=64,
+        help="Number of lifting channels in UNO",
+    )
+
+    parser.add_argument(
+        "--positional_embedding",
+        type=str,
+        default="grid",
+        help="Type of positional embedding in UNO",
+    )
+
+    parser.add_argument(
+        "--uno_out_channels",
+        type=list,
+        default=[32, 64, 64, 64, 32],
+        help="List of output channels for each UNO layer",
+    )
+
+    parser.add_argument(
+        "--uno_n_modes",
+        type=list,
+        default=[[16, 16], [12, 12], [12, 12], [16, 16], [16, 16]],
+        help="List of number of modes for each UNO layer",
+    )
+
+    parser.add_argument(
+        "--uno_scalings",
+        type=list,
+        default=[[1.0, 1.0], [0.5, 0.5], [1, 1], [2, 2], [1, 1]],
+        help="List of scalings for each UNO layer",
+    )
+    parser.add_argument(
+        "--horizontal_skips_map",
+        type=dict,
+        default=None,
+        help="Dictionary mapping horizontal skip connections in UNO",
+    )
+    parser.add_argument(
+        "--channel_mlp_skip",
+        type=str,
+        default='linear',
+        help="Type of channel MLP skip connection in UNO (none/linear/learnable)",
+    )
+    parser.add_argument(
+        "--n_layers",
+        type=int,
+        default=5,
+        help="Number of layers in UNO",
+    )
+
+    #########################################################################
+    ##DSFNO model from Yang et al.
+
+    parser.add_argument(
+        "--n_channels",
+        type=int,
+        default=64,
+        help="Number of hidden channels in DSFNO",
+    )
+    parser.add_argument(
+        "--n_residual_blocks",
+        type=int,
+        default=4,
+        help="Number of residual blocks in DSFNO",
+    )
+    parser.add_argument(
+        "--n_operator_blocks",
+        type=int,
+        default=2,
+        help="Number of FNO operator blocks in DSFNO",
+    )
+    parser.add_argument(
+        "--modes",
+        type=int,
+        default=18,
+        help="Number of FNO modes in FNO blocks in DSFNO",
+    )
+
+    parser.add_argument(
+        "--apply_constraint",
+        type=bool,
+        default=True,
+        help = "Apply softmax constraint to ensure energy conservation in DSFNO",
+    )
+
     #######################################################
     # TRAINING #
     parser.add_argument(
@@ -484,10 +599,11 @@ def main(args):
     # If doing pure autoencoder training (kl_beta = 0), the prior network is not
     # used at all in producing the loss. This is desired, but DDP complains.
     strategy = "ddp"
+    # strategy = "auto"
 
     trainer = pl.Trainer(
         max_epochs=args.epochs,
-        deterministic=True,
+        deterministic=False,
         strategy=strategy,
         accelerator=device_name,
         devices=devices,
@@ -497,8 +613,8 @@ def main(args):
         callbacks=callbacks,
         check_val_every_n_epoch=args.val_interval,
         precision=args.precision,
-        default_root_dir=local_tmp,
-        # accumulate_grad_batches=4
+        # default_root_dir=local_tmp,
+        #accumulate_grad_batches=4,
         #profiler="simple",
     )
 

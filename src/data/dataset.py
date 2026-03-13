@@ -179,8 +179,8 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         upsampled = F.interpolate(
             era5_batched,
             size=target_size,
-            mode='bicubic',
-            # mode='bilinear',
+            # mode='bicubic',
+            mode='bilinear',
             align_corners=False
         )                                                      # [1, C, H_new, W_new]
 

@@ -1,40 +1,33 @@
 """
 Backward compatibility layer for configuration management.
-
-This module ensures that existing YAML configs and command line arguments
-continue to work with the new configuration system.
 """
 
 from typing import Dict, Any
-from .base_config import ExperimentConfig
+from .base_config import (
+    ExperimentConfig, 
+    FNOModelConfig, 
+    UNetModelConfig, 
+    DiffusionModelConfig,
+    UNOModelConfig,
+    YangModelConfig,
+)
+
 
 def convert_legacy_config_to_new(legacy_args) -> ExperimentConfig:
-    """
-    Convert legacy argument parser namespace to new configuration format.
-    
-    This function ensures that existing YAML configs and command line arguments
-    continue to work with the new configuration system.
-    """
-    # Convert legacy args to flat dictionary first
+    """Convert legacy argument parser namespace to new configuration format."""
     config_dict = {}
-    
-    # Copy all attributes from legacy args, excluding system arguments
     exclude_args = {'config', 'use_new_config', 'validate_config'}
     
     for key, value in vars(legacy_args).items():
         if value is not None and key not in exclude_args:
             config_dict[key] = value
     
-    # Use the existing from_dict method which handles the mapping
     return ExperimentConfig.from_dict(config_dict)
 
+
 def create_legacy_args_from_config(config: ExperimentConfig):
-    """
-    Create legacy argument namespace from new configuration.
+    """Create legacy argument namespace from new configuration."""
     
-    This allows the new configuration system to work with legacy code
-    that expects argparse.Namespace objects.
-    """
     class LegacyArgs:
         def __init__(self, config: ExperimentConfig):
             # Dataset args
@@ -44,30 +37,15 @@ def create_legacy_args_from_config(config: ExperimentConfig):
             self.img_out_channels = config.dataset.img_out_channels
             self.img_resolution = config.dataset.img_resolution
             self.subset_ds = config.dataset.subset_size or 0
-          
-            #       
-            # Model args
-            self.model = config.model.model_type
-            # model_type should be the actual class name from the YAML file
-            # This comes from the top-level model_type field in the YAML
-            self.model_type = getattr(config, 'model_type', None)
-            # self.model_channels = config.model.model_channels
-            # self.channel_mult = config.model.channel_mult
-            # self.attn_resolutions = config.model.attn_resolutions
-            # self.embedding_type = config.model.embedding_type
-            # self.N_grid_channels = config.model.n_grid_channels
             
+            # Model args - common
+            self.model = config.model.model_type
+            self.model_type = getattr(config, 'model_type', None)
             self.checkpoint_level = config.model.checkpoint_level
             
-            self.num_fno_layers = config.model.num_fno_layers
-            self.fno_layer_size = config.model.fno_layer_size
-            self.num_fno_modes = config.model.num_fno_modes
-            self.fno_padding = config.model.fno_padding
-            self.coord_features = config.model.coord_features
-            self.decoder_layers = config.model.decoder_layers
-            self.decoder_layer_size = config.model.decoder_layer_size
+            # Model-specific args - set based on model type
+            self._set_model_specific_args(config.model)
             
-             
             # Training args
             self.lr = config.training.lr
             self.epochs = config.training.epochs
@@ -89,7 +67,7 @@ def create_legacy_args_from_config(config: ExperimentConfig):
             self.wandb_project = config.wandb_project
             self.run_name = config.run_name
             self.savepreds_path = config.save_preds_path
-            self.save_preds_path = config.save_preds_path  # Add both versions
+            self.save_preds_path = config.save_preds_path
             self.load = config.load
             self.restore_opt = config.restore_opt
             self.eval = config.eval
@@ -99,5 +77,101 @@ def create_legacy_args_from_config(config: ExperimentConfig):
             self.hr_mean_conditioning = config.hr_mean_conditioning
             self.num_ensembles = config.num_ensembles
             self.output_variables = config.output_variables
+        
+        def _set_model_specific_args(self, model_config):
+            """Set model-specific arguments based on model type."""
+            
+            if isinstance(model_config, FNOModelConfig):
+                self.num_fno_layers = model_config.num_fno_layers
+                self.fno_layer_size = model_config.fno_layer_size
+                self.num_fno_modes = model_config.num_fno_modes
+                self.fno_padding = model_config.fno_padding
+                self.coord_features = model_config.coord_features
+                self.decoder_layers = model_config.decoder_layers
+                self.decoder_layer_size = model_config.decoder_layer_size
+                # Set UNet params to None for FNO
+                self.model_channels = None
+                self.channel_mult = None
+                self.attn_resolutions = None
+                self.embedding_type = None
+                self.N_grid_channels = None
+                
+            elif isinstance(model_config, (UNetModelConfig, DiffusionModelConfig)):
+                self.model_channels = model_config.model_channels
+                self.channel_mult = model_config.channel_mult
+                self.attn_resolutions = model_config.attn_resolutions
+                self.embedding_type = model_config.embedding_type
+                self.N_grid_channels = model_config.n_grid_channels
+                self.model_type = getattr(model_config, 'network_type', 'SongUNetPosEmbd')
+                # Set FNO params to None for UNet/Diffusion
+                self.num_fno_layers = None
+                self.fno_layer_size = None
+                self.num_fno_modes = None
+                self.fno_padding = None
+                self.coord_features = None
+                self.decoder_layers = None
+                self.decoder_layer_size = None
+                
+                # Diffusion-specific
+                if isinstance(model_config, DiffusionModelConfig):
+                    self.num_diffusion_steps = model_config.num_diffusion_steps
+                    self.noise_schedule = model_config.noise_schedule
+                    self.beta_start = model_config.beta_start
+                    self.beta_end = model_config.beta_end
+
+            elif isinstance(model_config, UNOModelConfig):
+                self.hidden_channels = model_config.hidden_channels
+                self.projection_channels = model_config.projection_channels
+                self.lifting_channels = model_config.lifting_channels
+                self.uno_out_channels = model_config.uno_out_channels
+                self.uno_n_modes = model_config.uno_n_modes
+                self.uno_scalings = model_config.uno_scalings
+                self.positional_embedding = model_config.positional_embedding
+                self.horizontal_skips_map = model_config.horizontal_skips_map
+                self.channel_mlp_skip = model_config.channel_mlp_skip
+                self.n_layers = model_config.n_layers
+                # Set FNO and Diffusion params to None for UNO
+                self.num_fno_layers = None
+                self.fno_layer_size = None
+                self.num_fno_modes = None
+                self.fno_padding = None
+                self.coord_features = None
+                self.decoder_layers = None
+                self.decoder_layer_size = None
+                self.model_channels = None
+                self.channel_mult = None
+                self.attn_resolutions = None
+                self.embedding_type = None
+                self.N_grid_channels = None
+
+            elif isinstance(model_config, YangModelConfig):
+                self.n_channels = model_config.n_channels
+                self.n_residual_blocks = model_config.n_residual_blocks
+                self.n_operator_blocks = model_config.n_operator_blocks
+                self.modes = model_config.modes
+                self.apply_constraint = model_config.apply_constraint
+                # Set other model params to None for DSFNO
+                self.num_fno_layers = None
+                self.fno_layer_size = None
+                self.num_fno_modes = None
+                self.fno_padding = None
+                self.coord_features = None
+                self.decoder_layers = None
+                self.decoder_layer_size = None
+                self.model_channels = None
+                self.channel_mult = None
+                self.attn_resolutions = None
+                self.embedding_type = None
+                self.N_grid_channels = None
+                self.hidden_channels = None
+                self.projection_channels = None
+                self.lifting_channels = None
+                self.uno_out_channels = None
+                self.uno_n_modes = None
+                self.uno_scalings = None
+                self.positional_embedding = None
+                self.horizontal_skips_map = None
+                self.channel_mlp_skip = None
+                self.n_layers = None
     
     return LegacyArgs(config)

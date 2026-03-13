@@ -34,26 +34,31 @@ VARS = ['u10', 'v10', 't2m', 'vorticity', 'divergence', 'k-energy'] #, 'sshf', '
 CHANNEL_MAP = {var: i for i, var in enumerate(VARS)}  # adjust if order differs
 
 CERRA_PATH = pathlib.Path(
-    "/aspire/CarloData/NeurIPS-workshop/CentralEurope_2014_2020/CERRA/samples/test" 
+    "/projects/0/prjs0951/Devashish/NeurIPS-workshop/CentralEurope_2014_2020/CERRA/samples/test" 
 )
 
 ERA5_PATH = pathlib.Path(
-    "/aspire/CarloData/NeurIPS-workshop/CentralEurope_2014_2020/ERA5/samples/test"
+    "/projects/0/prjs0951/Devashish/NeurIPS-workshop/CentralEurope_2014_2020/ERA5/samples/test"
 )
 
 MODEL_PATHS: Dict[str, pathlib.Path] = {
     
-    # "FNO": pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/FNO-downscaling-reduced-model-FNO-01_08_23-7439/files"),
-    "UNet_PSDLoss": pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/files"),
-    "FNO_PSDLoss" : pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/files"),
-    "FNO_RRDB" :  pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/FNO-rrdb-FNO-01_19_15-6538/FNO-rrdb-FNO-01_19_15-6538/files")
-    # "UNet-CNN": pathlib.Path("/space2/csaccardi/devashish/PSD-Downscaling_thesis/saved_models/UNet-resume-lastckpt-UNet-CNN-01_12_11-3658/UNet-resume-lastckpt-UNet-CNN-01_12_11-3658/files"),
+     "UNet_PSDLoss": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/files"),
+    #  "Yang_FNO_unconstrained": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/DSFNO-snellius-DSFNO-02_18_20-8558/DSFNO-snellius-DSFNO-02_18_20-8558/files"),
+    #  "Yang_FNO_constrained": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/DSFNO-constraint-DSFNO-02_19_16-5746/DSFNO-constraint-DSFNO-02_19_16-5746/files"),
+    "FNO_PSDLoss" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/files"),
+    "FNO_RRDB" :  pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-rrdb-FNO-01_19_15-6538/FNO-rrdb-FNO-01_19_15-6538/files"),
+    # "UNO_3.8M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1-UNO-02_13_14-5865/UNO_v1-UNO-02_13_14-5865/files"),
+    # "UNO_11.5M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_h100-UNO-02_15_15-8313/UNO_v1_run_h100-UNO-02_15_15-8313/files"),
+    "UNO_35.5M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/UNO_v1_run_modeshigher-UNO-02_15_18-3345/files"),  
+    # "UNO_35.5M_lrscheduler": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_h100_lrcosine-UNO-02_16_14-6522/UNO_v1_run_h100_lrcosine-UNO-02_16_14-6522/files"),
+    
 }
 
 ERA5_DX_DEG = 25                       # longitude spacing of reference grid
 N_BINS = 200                             # PDF histogram resolution
 EPS = 1e-12                              # avoids log(0)
-OUT_DIR = pathlib.Path("plot_tests_RRDB")
+OUT_DIR = pathlib.Path("plot_tests_friday_rrdb")
 OUT_DIR.mkdir(exist_ok=True)
 
 # ──────────────────────────────────────────

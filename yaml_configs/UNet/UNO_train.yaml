@@ -1,0 +1,57 @@
+# =========================
+# GENERAL OPTIONS
+# =========================
+dataset_cerra: "/projects/0/prjs0951/Devashish/NeurIPS-workshop/CentralEurope_2014_2020/CERRA" 
+dataset_era5: "/projects/0/prjs0951/Devashish/NeurIPS-workshop/CentralEurope_2014_2020/ERA5"
+model: UNO                 # Model architecture
+subset_ds: 0                   # 0 = full dataset, >0 = subset size
+seed: 32
+n_workers: 16                   # Dataloader workers
+load: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/min_val_loss.ckpt"
+restore_opt: 1                    # 0 = do not restore optimizer
+precision: "32"              # 32 | 16 | 16-mixed | bf16
+eval: test                    # val | test | null → train
+wandb_project: UNO_run
+run_name: UNO_v1_run_h100_test    # Optional run name
+# =========================
+# DATASET SETTINGS
+# =========================
+output_variables: null             # List of vars to predict
+img_in_channels: 15        ##from 15
+img_out_channels: 5
+img_resolution: [368, 368]
+
+# =========================
+# MODEL SETTINGS
+# =========================
+
+n_layers: 5
+hidden_channels: 128
+projection_channels: 512
+lifting_channels: 512
+positional_embedding: 'grid'  # 'grid' | 'fourier' | 'none'
+uno_out_channels: [64, 128, 256, 128, 64]
+uno_n_modes: [[48,48],[24,24],[12,12],[24,24],[48,48]]
+# uno_n_modes: [[32, 32], [24, 24], [16, 16], [24, 24], [32, 32]]
+# uno_n_modes: [[16, 16], [12, 12], [12, 12], [16, 16], [20, 20]]
+uno_scalings: [[1.0, 1.0], [0.5, 0.5], [0.5, 0.5], [2.0, 2.0], [2.0, 2.0]]
+horizontal_skips_map: {4:0, 3:1}
+channel_mlp_skip: 'linear'  # 'linear' | 'soft-gating' | 'identity'
+
+# =========================
+# TRAINING SETTINGS
+# =========================
+val_interval: 1
+lr: 2.0e-4
+# lr: 1.0e-6
+epochs: 200
+batch_size: 16
+lr_decay: 1
+lr_rampup: 0
+grad_clip_threshold: null          # Set a number to enable clipping
+checkpoint_level: 0
+init_lambda: 0.0
+max_lambda: 0.0001
+loss_type: 'Fourier_Carlo'
+resume: null
+savepreds_path: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/"

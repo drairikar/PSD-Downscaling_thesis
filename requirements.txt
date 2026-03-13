@@ -36,3 +36,6 @@ PyYAML==6.0.2
 tqdm==4.67.1
 easydict==1.13
 
+##neural operators
+neuraloperator==2.0.0
+
