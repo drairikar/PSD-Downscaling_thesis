@@ -9,5 +9,6 @@ from .diffusion import DiffusionWrapper
 from .fno_v1 import FNOWrapper
 from .UNO import UNOWrapper
 from .Yang import DSFNOWrapper
+from .afno import AFNOWrapper
 
-__all__ = ['UNetWrapper', 'DiffusionWrapper', 'FNOWrapper', 'UNOWrapper', 'DSFNOWrapper']
+__all__ = ['UNetWrapper', 'DiffusionWrapper', 'FNOWrapper', 'UNOWrapper', 'DSFNOWrapper', 'AFNOWrapper']

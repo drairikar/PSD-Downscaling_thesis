@@ -21,6 +21,7 @@ class ModelType(Enum):
     FNO = "FNO"
     UNO = "UNO"
     DSFNO = "DSFNO"
+    AFNO = "AFNO"
 
 class PrecisionType(Enum):
     """Supported precision types."""
@@ -232,9 +233,37 @@ class YangModelConfig(BaseModelConfig):
             raise ValueError("n_operator_blocks must be positive")
         if self.modes <= 0:
             raise ValueError("modes must be positive")
+        
+@dataclass
+class AFNOModelConfig(BaseModelConfig):
+    
+    model_type: str = "AFNO"
+    afno_patch_size: List[int] = field(default_factory=lambda: [8, 8])
+    afno_embed_dim: int = 256
+    afno_depth: int = 4
+    afno_mlp_ratio: float = 4.0
+    afno_drop_rate: float = 0.0
+    afno_num_blocks: int = 8
+    afno_sparsity_threshold: float = 0.01
+    afno_hard_thresholding_fraction: float= 1.0
+
+    def __post_init__(self):
+        self._validate()
+
+    def _validate(self):
+        self._validate_base()
+
+        if self.afno_embed_dim % self.afno_num_blocks != 0:
+            raise ValueError(f"afno_embed_dim ({self.afno_embed_dim}) must be divisible by afno_num_blocks ({self.afno_num_blocks}")
+        
+        if len(self.afno_patch_size) != 2 or any(p <= 0 for p in self.afno_patch_size):
+            raise ValueError("afno_patch_size must be a list of 2 positive ints")
+        if self.afno_depth <= 0:
+            raise ValueError("afno_depth must be positive")    
+
 
 # Type alias for model configs
-ModelConfig = Union[FNOModelConfig, UNetModelConfig, DiffusionModelConfig, UNOModelConfig, YangModelConfig]
+ModelConfig = Union[FNOModelConfig, UNetModelConfig, DiffusionModelConfig, UNOModelConfig, YangModelConfig, AFNOModelConfig]
 
 
 def create_model_config(config_dict: Dict[str, Any]) -> ModelConfig:
@@ -248,6 +277,7 @@ def create_model_config(config_dict: Dict[str, Any]) -> ModelConfig:
         'Diffusion': DiffusionModelConfig,
         'UNO': UNOModelConfig,
         'DSFNO': YangModelConfig,
+        'AFNO': AFNOModelConfig,
     }
     
     if model_type not in config_classes:
@@ -291,6 +321,12 @@ def _extract_model_params(config_dict: Dict[str, Any], model_type: str) -> Dict[
         'DSFNO': [
             'n_channels', 'n_residual_blocks', 'n_operator_blocks', 'modes', 'apply_constraint'
         ],
+
+        'AFNO': [
+            'afno_patch_size', 'afno_embed_dim', 'afno_depth', 'afno_mlp_ratio',
+            'afno_drop_rate', 'afno_num_blocks', 'afno_sparsity_threshold',
+            'afno_hard_thresholding_fraction'
+        ]
     }
     
     allowed_keys = set(common_keys + model_param_keys.get(model_type, []))
@@ -485,5 +521,8 @@ def _get_all_model_keys() -> List[str]:
         'channel_mlp_skip', 'n_layers',
         # Yang-specific (DSFNO)
         'n_channels', 'n_residual_blocks', 'n_operator_blocks', 'modes', 'apply_constraint',
+        # AFNO-specific
+        'afno_patch_size', 'afno_embed_dim', 'afno_depth', 'afno_mlp_ratio', 'afno_drop_rate',
+        'afno_num_blocks', 'afno_sparsity_threshold', 'afno_hard_thresholding_fraction',
     ]
     

@@ -3,8 +3,8 @@
 #SBATCH --nodes=1
 #SBATCH -p gpu_h100
 #SBATCH -t 2-23:59:59
-#SBATCH --cpus-per-task=32
-#SBATCH --gpus=2
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus=1
 #SBATCH --mem-per-gpu=100G
 #SBATCH --mail-type=END
 #SBATCH --mail-user=d.y.rairikar@student.tudelft.nl
@@ -37,7 +37,7 @@ python --version
 export WANDB_API_KEY=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
 
 # srun python main.py --config="yaml_configs/UNet/UNO_train.yaml"
-srun python main.py --config="yaml_configs/UNet/FNO_train.yaml"
+# srun python main.py --config="yaml_configs/UNet/AFNO_train.yaml"
 # srun python main.py --config="yaml_configs/UNet/DSFNO_train.yaml"
 # srun python main.py --config="yaml_configs/UNet/UNet_train.yaml"
-# python src/utils/psd_plot.py
+python src/utils/psd_plot.py

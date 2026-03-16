@@ -15,6 +15,7 @@ from src.models import UNetWrapper, DiffusionWrapper
 from src.models.fno_v1 import FNOWrapper
 from src.models.UNO import UNOWrapper
 from src.models.Yang import DSFNOWrapper
+from src.models.afno import AFNOWrapper
 from src.data import ERA5toCERRA2
 import os
 import tempfile
@@ -71,6 +72,7 @@ MODELS = {
     "FNO": FNOWrapper,
     "UNO": UNOWrapper,
     "DSFNO": DSFNOWrapper,
+    "AFNO": AFNOWrapper,
 }
 
 def get_args():
@@ -275,106 +277,165 @@ def get_args():
     #####################################################
     ##UNO model legacy args (commented out for FNO and UNet)
 
+    # parser.add_argument(
+    #     "--hidden_channels",
+    #     type=int,
+    #     default=64,
+    #     help="Number of hidden channels in UNO",
+    # )
+
+    # parser.add_argument(
+    #     "--projection_channels",
+    #     type=int,
+    #     default=64,
+    #     help="Number of projection channels in UNO",
+    # )
+
+    # parser.add_argument(
+    #     "--lifting_channels",
+    #     type=int,
+    #     default=64,
+    #     help="Number of lifting channels in UNO",
+    # )
+
+    # parser.add_argument(
+    #     "--positional_embedding",
+    #     type=str,
+    #     default="grid",
+    #     help="Type of positional embedding in UNO",
+    # )
+
+    # parser.add_argument(
+    #     "--uno_out_channels",
+    #     type=list,
+    #     default=[32, 64, 64, 64, 32],
+    #     help="List of output channels for each UNO layer",
+    # )
+
+    # parser.add_argument(
+    #     "--uno_n_modes",
+    #     type=list,
+    #     default=[[16, 16], [12, 12], [12, 12], [16, 16], [16, 16]],
+    #     help="List of number of modes for each UNO layer",
+    # )
+
+    # parser.add_argument(
+    #     "--uno_scalings",
+    #     type=list,
+    #     default=[[1.0, 1.0], [0.5, 0.5], [1, 1], [2, 2], [1, 1]],
+    #     help="List of scalings for each UNO layer",
+    # )
+    # parser.add_argument(
+    #     "--horizontal_skips_map",
+    #     type=dict,
+    #     default=None,
+    #     help="Dictionary mapping horizontal skip connections in UNO",
+    # )
+    # parser.add_argument(
+    #     "--channel_mlp_skip",
+    #     type=str,
+    #     default='linear',
+    #     help="Type of channel MLP skip connection in UNO (none/linear/learnable)",
+    # )
+    # parser.add_argument(
+    #     "--n_layers",
+    #     type=int,
+    #     default=5,
+    #     help="Number of layers in UNO",
+    # )
+
+    # #########################################################################
+    # ##DSFNO model from Yang et al.
+
+    # parser.add_argument(
+    #     "--n_channels",
+    #     type=int,
+    #     default=64,
+    #     help="Number of hidden channels in DSFNO",
+    # )
+    # parser.add_argument(
+    #     "--n_residual_blocks",
+    #     type=int,
+    #     default=4,
+    #     help="Number of residual blocks in DSFNO",
+    # )
+    # parser.add_argument(
+    #     "--n_operator_blocks",
+    #     type=int,
+    #     default=2,
+    #     help="Number of FNO operator blocks in DSFNO",
+    # )
+    # parser.add_argument(
+    #     "--modes",
+    #     type=int,
+    #     default=18,
+    #     help="Number of FNO modes in FNO blocks in DSFNO",
+    # )
+
+    # parser.add_argument(
+    #     "--apply_constraint",
+    #     type=bool,
+    #     default=True,
+    #     help = "Apply softmax constraint to ensure energy conservation in DSFNO",
+    # )
+
+    ######################################################################
+    ####################AFNO model##############################
+
     parser.add_argument(
-        "--hidden_channels",
-        type=int,
-        default=64,
-        help="Number of hidden channels in UNO",
+        "--afno_patch_size",
+        type = list,
+        default = [8, 8],
+        help="AFNO patch size"
     )
 
     parser.add_argument(
-        "--projection_channels",
-        type=int,
-        default=64,
-        help="Number of projection channels in UNO",
+        "--afno_embed_dim",
+        type = int,
+        default = 256,
+        help="AFNO embedding dimension"
     )
 
     parser.add_argument(
-        "--lifting_channels",
-        type=int,
-        default=64,
-        help="Number of lifting channels in UNO",
+        "--afno_depth",
+        type = int,
+        default = 4,
+        help="AFNO depth (number of AFNO blocks)"
     )
 
     parser.add_argument(
-        "--positional_embedding",
-        type=str,
-        default="grid",
-        help="Type of positional embedding in UNO",
+        "--afno_mlp_ratio",
+        type = float,
+        default = 4.0,
+        help="AFNO MLP ratio"
     )
 
     parser.add_argument(
-        "--uno_out_channels",
-        type=list,
-        default=[32, 64, 64, 64, 32],
-        help="List of output channels for each UNO layer",
+        "--afno_drop_rate",
+        type = float,
+        default = 0.0,
+        help="AFNO dropout rate"
     )
 
     parser.add_argument(
-        "--uno_n_modes",
-        type=list,
-        default=[[16, 16], [12, 12], [12, 12], [16, 16], [16, 16]],
-        help="List of number of modes for each UNO layer",
+        "--afno_num_blocks",
+        type = int,
+        default = 8,
+        help="Number of AFNO blocks in the model"
     )
 
     parser.add_argument(
-        "--uno_scalings",
-        type=list,
-        default=[[1.0, 1.0], [0.5, 0.5], [1, 1], [2, 2], [1, 1]],
-        help="List of scalings for each UNO layer",
-    )
-    parser.add_argument(
-        "--horizontal_skips_map",
-        type=dict,
-        default=None,
-        help="Dictionary mapping horizontal skip connections in UNO",
-    )
-    parser.add_argument(
-        "--channel_mlp_skip",
-        type=str,
-        default='linear',
-        help="Type of channel MLP skip connection in UNO (none/linear/learnable)",
-    )
-    parser.add_argument(
-        "--n_layers",
-        type=int,
-        default=5,
-        help="Number of layers in UNO",
-    )
-
-    #########################################################################
-    ##DSFNO model from Yang et al.
+        "--afno_sparsity_threshold",
+        type = float,
+        default = 0.01,
+        help = 'Sparsity threshold'
+    ) 
 
     parser.add_argument(
-        "--n_channels",
-        type=int,
-        default=64,
-        help="Number of hidden channels in DSFNO",
-    )
-    parser.add_argument(
-        "--n_residual_blocks",
-        type=int,
-        default=4,
-        help="Number of residual blocks in DSFNO",
-    )
-    parser.add_argument(
-        "--n_operator_blocks",
-        type=int,
-        default=2,
-        help="Number of FNO operator blocks in DSFNO",
-    )
-    parser.add_argument(
-        "--modes",
-        type=int,
-        default=18,
-        help="Number of FNO modes in FNO blocks in DSFNO",
-    )
-
-    parser.add_argument(
-        "--apply_constraint",
-        type=bool,
-        default=True,
-        help = "Apply softmax constraint to ensure energy conservation in DSFNO",
+        "--afno_hard_thresholding_fraction",
+        type = float,
+        default = 1.0,
+        help = 'Hard thresholding fraction'
     )
 
     #######################################################

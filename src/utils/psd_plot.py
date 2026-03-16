@@ -47,7 +47,8 @@ MODEL_PATHS: Dict[str, pathlib.Path] = {
     #  "Yang_FNO_unconstrained": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/DSFNO-snellius-DSFNO-02_18_20-8558/DSFNO-snellius-DSFNO-02_18_20-8558/files"),
     #  "Yang_FNO_constrained": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/DSFNO-constraint-DSFNO-02_19_16-5746/DSFNO-constraint-DSFNO-02_19_16-5746/files"),
     "FNO_PSDLoss" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/files"),
-    "FNO_RRDB" :  pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-rrdb-FNO-01_19_15-6538/FNO-rrdb-FNO-01_19_15-6538/files"),
+    "AFNO_PSDLoss" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/AFNO_v2-AFNO-03_13_22-3461/AFNO_v2-AFNO-03_13_22-3461/files"),
+    # "FNO_RRDB" :  pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-rrdb-FNO-01_19_15-6538/FNO-rrdb-FNO-01_19_15-6538/files"),
     # "UNO_3.8M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1-UNO-02_13_14-5865/UNO_v1-UNO-02_13_14-5865/files"),
     # "UNO_11.5M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_h100-UNO-02_15_15-8313/UNO_v1_run_h100-UNO-02_15_15-8313/files"),
     "UNO_35.5M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/UNO_v1_run_modeshigher-UNO-02_15_18-3345/files"),  
@@ -58,7 +59,7 @@ MODEL_PATHS: Dict[str, pathlib.Path] = {
 ERA5_DX_DEG = 25                       # longitude spacing of reference grid
 N_BINS = 200                             # PDF histogram resolution
 EPS = 1e-12                              # avoids log(0)
-OUT_DIR = pathlib.Path("plot_tests_friday_rrdb")
+OUT_DIR = pathlib.Path("plot_tests_afno")
 OUT_DIR.mkdir(exist_ok=True)
 
 # ──────────────────────────────────────────

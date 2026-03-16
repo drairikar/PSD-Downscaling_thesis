@@ -10,6 +10,7 @@ from .base_config import (
     DiffusionModelConfig,
     UNOModelConfig,
     YangModelConfig,
+    AFNOModelConfig,
 )
 
 
@@ -151,6 +152,39 @@ def create_legacy_args_from_config(config: ExperimentConfig):
                 self.modes = model_config.modes
                 self.apply_constraint = model_config.apply_constraint
                 # Set other model params to None for DSFNO
+                self.num_fno_layers = None
+                self.fno_layer_size = None
+                self.num_fno_modes = None
+                self.fno_padding = None
+                self.coord_features = None
+                self.decoder_layers = None
+                self.decoder_layer_size = None
+                self.model_channels = None
+                self.channel_mult = None
+                self.attn_resolutions = None
+                self.embedding_type = None
+                self.N_grid_channels = None
+                self.hidden_channels = None
+                self.projection_channels = None
+                self.lifting_channels = None
+                self.uno_out_channels = None
+                self.uno_n_modes = None
+                self.uno_scalings = None
+                self.positional_embedding = None
+                self.horizontal_skips_map = None
+                self.channel_mlp_skip = None
+                self.n_layers = None
+
+            elif isinstance(model_config, AFNOModelConfig):
+                self.afno_patch_size = model_config.afno_patch_size
+                self.afno_embed_dim = model_config.afno_embed_dim
+                self.afno_depth = model_config.afno_depth
+                self.afno_mlp_ratio = model_config.afno_mlp_ratio
+                self.afno_drop_rate = model_config.afno_drop_rate
+                self.afno_num_blocks = model_config.afno_num_blocks
+                self.afno_sparsity_threshold = model_config.afno_sparsity_threshold
+                self.afno_hard_thresholding_fraction = model_config.afno_hard_thresholding_fraction
+                # Set other model params to None for AFNO
                 self.num_fno_layers = None
                 self.fno_layer_size = None
                 self.num_fno_modes = None
