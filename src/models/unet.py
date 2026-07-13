@@ -248,39 +248,40 @@ class UNetWrapper(pl.LightningModule):
 
         # (5) Compute per‐variable metrics. Here var_names must match the channel order.
         var_names = ['u10', 'v10', 't2m', 'sshf', 'zust']
-        mse_vars  = {}
-        mae_vars  = {}
-        rmse_vars = {}
-        ssim_vars = {}
+        # mse_vars  = {}
+        # mae_vars  = {}
+        # rmse_vars = {}
+        # ssim_vars = {}
+        log_metrics = {}
 
         for i, var_name in enumerate(var_names):
             pred_i = predictions[:, i, :, :]  # shape (B, H, W)
             gt_i   = ground_truth[:, i, :, :]
 
             mse_val= torch.mean((pred_i - gt_i) ** 2)
-            mse_vars[f"test_mse_{var_name}"] = mse_val
-            mae_vars[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i))
-            rmse_vars[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
+            log_metrics[f"test_mse_{var_name}"] = mse_val
+            log_metrics[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i))
+            log_metrics[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
 
             # SSIM for single‐channel: add a dummy channel dim
             data_range_i = (gt_i.max() - gt_i.min()).item()
-            ssim_vars[f"test_ssim_{var_name}"] = ssim_func(
+            log_metrics[f"test_ssim_{var_name}"] = ssim_func(
                 pred_i.unsqueeze(1),
                 gt_i.unsqueeze(1),
                 data_range=data_range_i
             )
 
         # (6) Log everything
-        log_metrics = {
-            "test_mse": mse_all,
-            "test_mae": mae_all,
-            "test_rmse": rmse_all,
-            "test_ssim": ssim_all,
-        }
-        log_metrics.update(mse_vars)
-        log_metrics.update(mae_vars)
-        log_metrics.update(rmse_vars)
-        log_metrics.update(ssim_vars)
+        # log_metrics = {
+        #     "test_mse": mse_all,
+        #     "test_mae": mae_all,
+        #     "test_rmse": rmse_all,
+        #     "test_ssim": ssim_all,
+        # }
+        # log_metrics.update(mse_vars)
+        # log_metrics.update(mae_vars)
+        # log_metrics.update(rmse_vars)
+        # log_metrics.update(ssim_vars)
 
         # Write to Lightning’s logger (and optionally sync across GPUs)
         self.log_dict(log_metrics, prog_bar=False, on_epoch=True, sync_dist=True)

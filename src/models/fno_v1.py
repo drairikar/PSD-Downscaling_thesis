@@ -20,7 +20,7 @@ from .losses.fourier_losses import FourierLossETH, FourierLossDelft, FourierLoss
 from physicsnemo.models.fno import FNO
 # from .rrdb import RRDBNet
 
-# from torch.nn import functional as F
+from torch.nn import functional as F
 
 
 class FNOWrapper(pl.LightningModule):
@@ -201,32 +201,51 @@ class FNOWrapper(pl.LightningModule):
         ssim_all = ssim_func(predictions, ground_truth, data_range=data_range)
 
         var_names = ['u10', 'v10', 't2m', 'sshf', 'zust']
-        mse_vars, mae_vars, rmse_vars, ssim_vars = {}, {}, {}, {}
+        # mse_vars, mae_vars, rmse_vars, ssim_vars = {}, {}, {}, {}
+        log_metrics = {}
 
         for i, var_name in enumerate(var_names):
             pred_i = predictions[:, i, :, :]
             gt_i = ground_truth[:, i, :, :]
             mse_val = torch.mean((pred_i - gt_i) ** 2)
-            mse_vars[f"test_mse_{var_name}"] = mse_val
-            mae_vars[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i))
-            rmse_vars[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
+            log_metrics[f"test_mse_{var_name}"] = mse_val
+            log_metrics[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i))
+            log_metrics[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
             data_range_i = (gt_i.max() - gt_i.min()).item()
-            ssim_vars[f"test_ssim_{var_name}"] = ssim_func(
+            log_metrics[f"test_ssim_{var_name}"] = ssim_func(
                 pred_i.unsqueeze(1), gt_i.unsqueeze(1), data_range=data_range_i
             )
 
-        log_metrics = {
-            "test_mse": mse_all, "test_mae": mae_all,
-            "test_rmse": rmse_all, "test_ssim": ssim_all,
-        }
-        log_metrics.update(mse_vars)
-        log_metrics.update(mae_vars)
-        log_metrics.update(rmse_vars)
-        log_metrics.update(ssim_vars)
+        # log_metrics = {
+        #     "test_mse": mse_all, "test_mae": mae_all,
+        #     "test_rmse": rmse_all, "test_ssim": ssim_all,
+        # }
+        # log_metrics.update(mse_vars)
+        # log_metrics.update(mae_vars)
+        # log_metrics.update(rmse_vars)
+        # log_metrics.update(ssim_vars)
 
         self.log_dict(log_metrics, prog_bar=False, on_epoch=True, sync_dist=True)
         self.plot_preds(predictions, ground_truth, img_lr, diz_stats)
         return log_metrics
+
+    # def test_step(self, batch, batch_idx):
+    #     # compute forward pass, compute MSE, MAE, plot PSD, and plot some examples
+    #     target, x = batch 
+    #     D_yn = self(x, force_fp32=False)
+    #     mse = F.mse_loss(D_yn, target)
+    #     mae = F.l1_loss(D_yn, target)
+    #     self.log("test_mse", mse, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+    #     self.log("test_mae", mae, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+    #     return {"test_mse": mse.detach(), "test_mae": mae.detach()}
+
+    # def on_test_epoch_end(self):
+    #     """Print aggregated test metrics (already reduced by Lightning)."""
+    #     if self.trainer.is_global_zero:
+    #         mse = self.trainer.callback_metrics.get("test_mse", None)
+    #         mae = self.trainer.callback_metrics.get("test_mae", None)
+    #         if mse is not None and mae is not None:
+    #             print(f"Test MSE (epoch): {mse:.4f}, Test MAE (epoch): {mae:.4f}")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=self.lr)

@@ -7,12 +7,12 @@ model: FNO                 # Model architecture
 subset_ds: 0                   # 0 = full dataset, >0 = subset size
 seed: 32
 n_workers: 16                    # Dataloader workers
-load: null
+load: /home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/min_val_loss.ckpt
 restore_opt: 1                    # 0 = do not restore optimizer
 precision: "16-mixed"              # 32 | 16 | 16-mixed | bf16
-eval: null                    # val | test | null → train
+eval: test                    # val | test | null → train
 wandb_project: finetune
-run_name: FNO-snellius-trainv2     # Optional run name
+run_name: FNO-snellius-testv2     # Optional run name
 # =========================
 # DATASET SETTINGS
 # =========================
@@ -25,13 +25,13 @@ img_resolution: [368, 368]
 # MODEL SETTINGS
 # =========================
 
-num_fno_layers: 4
-fno_layer_size: 128
+num_fno_layers: 2
+fno_layer_size: 64
 num_fno_modes: 16
-fno_padding: 16
+fno_padding: 8
 coord_features: True
-decoder_layers: 2
-decoder_layer_size: 128
+decoder_layers: 1
+decoder_layer_size: 64
 
 # =========================
 # TRAINING SETTINGS

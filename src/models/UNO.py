@@ -204,39 +204,50 @@ class UNOWrapper(pl.LightningModule):
                 np.save(out_path, preds_cpu[i])
 
         # Compute metrics
-        mse_all = torch.mean((predictions - ground_truth) ** 2).detach()
-        mae_all = torch.mean(torch.abs(predictions - ground_truth)).detach()
-        rmse_all = torch.sqrt(mse_all)
-        data_range = (ground_truth.max() - ground_truth.min()).item()
-        ssim_all = ssim(predictions, ground_truth, data_range=data_range).detach()
+        # mse_all = torch.mean((predictions - ground_truth) ** 2).detach()
+        # mae_all = torch.mean(torch.abs(predictions - ground_truth)).detach()
+        # rmse_all = torch.sqrt(mse_all)
+        # data_range = (ground_truth.max() - ground_truth.min()).item()
+        # ssim_all = ssim(predictions, ground_truth, data_range=data_range).detach()
 
         var_names = ['u10', 'v10', 't2m', 'sshf', 'zust']
-        mse_vars, mae_vars, rmse_vars, ssim_vars = {}, {}, {}, {}
+        log_metrics = {}
 
         for i, var_name in enumerate(var_names):
             pred_i = predictions[:, i, :, :]
             gt_i = ground_truth[:, i, :, :]
-            mse_val = torch.mean((pred_i - gt_i) ** 2).detach()
-            mse_vars[f"test_mse_{var_name}"] = mse_val
-            mae_vars[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i)).detach()
-            rmse_vars[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
+            mse_val = torch.mean((pred_i - gt_i) ** 2)
+            log_metrics[f"test_mse_{var_name}"] = mse_val
+            log_metrics[f"test_mae_{var_name}"] = torch.mean(torch.abs(pred_i - gt_i))
+            log_metrics[f"test_rmse_{var_name}"] = torch.sqrt(mse_val)
             data_range_i = (gt_i.max() - gt_i.min()).item()
-            ssim_vars[f"test_ssim_{var_name}"] = ssim(
+            log_metrics[f"test_ssim_{var_name}"] = ssim(
                 pred_i.unsqueeze(1), gt_i.unsqueeze(1), data_range=data_range_i
-            ).detach()
+            )
+        # log_metrics = {
+        #     "test_mse": mse_all, "test_mae": mae_all,
+        #     "test_rmse": rmse_all, "test_ssim": ssim_all,
+        # }
+        
+        # log_metrics.update(mse_vars)
+        # log_metrics.update(mae_vars)
+        # log_metrics.update(rmse_vars)
+        # log_metrics.update(ssim_vars)
 
-        log_metrics = {
-            "test_mse": mse_all, "test_mae": mae_all,
-            "test_rmse": rmse_all, "test_ssim": ssim_all,
-        }
-        log_metrics.update(mse_vars)
-        log_metrics.update(mae_vars)
-        log_metrics.update(rmse_vars)
-        log_metrics.update(ssim_vars)
+        # for var_name in var_names:
+        #     print(
+        #         f"Test MSE for {var_name}: {log_metrics[f'test_mse_{var_name}']:.4f}, "
+        #         f"MAE: {log_metrics[f'test_mae_{var_name}']:.4f}, "
+        #         f"RMSE: {log_metrics[f'test_rmse_{var_name}']:.4f}, "
+        #         f"SSIM: {log_metrics[f'test_ssim_{var_name}']:.4f}"
+        #     )
+
 
         self.log_dict(log_metrics, prog_bar=False, on_epoch=True, sync_dist=True)
         self.plot_preds(predictions, ground_truth, img_lr, diz_stats)
         return log_metrics
+
+    
 
     def configure_optimizers(self):
         # return torch.optim.Adam(self.model.parameters(), lr=self.lr)

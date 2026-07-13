@@ -43,15 +43,12 @@ ERA5_PATH = pathlib.Path(
 
 MODEL_PATHS: Dict[str, pathlib.Path] = {
     
-     "UNet_PSDLoss": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/files"),
-    #  "Yang_FNO_unconstrained": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/DSFNO-snellius-DSFNO-02_18_20-8558/DSFNO-snellius-DSFNO-02_18_20-8558/files"),
-    #  "Yang_FNO_constrained": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/DSFNO-constraint-DSFNO-02_19_16-5746/DSFNO-constraint-DSFNO-02_19_16-5746/files"),
-    "FNO_PSDLoss" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/files"),
-    "AFNO_PSDLoss" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/AFNO_v2-AFNO-03_13_22-3461/AFNO_v2-AFNO-03_13_22-3461/files"),
-    # "FNO_RRDB" :  pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-rrdb-FNO-01_19_15-6538/FNO-rrdb-FNO-01_19_15-6538/files"),
+     "UNet-CNN": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/UNet-train-PSDLoss-UNet-CNN-01_16_11-6424/files"),
+     "FNO" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/FNO-downscaling-lossfn_Carlo-FNO-01_14_11-8812/files"),
+    # "AFNO_PSDLoss" : pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/AFNO_v2-AFNO-03_13_22-3461/AFNO_v2-AFNO-03_13_22-3461/files"),
     # "UNO_3.8M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1-UNO-02_13_14-5865/UNO_v1-UNO-02_13_14-5865/files"),
     # "UNO_11.5M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_h100-UNO-02_15_15-8313/UNO_v1_run_h100-UNO-02_15_15-8313/files"),
-    "UNO_35.5M": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/UNO_v1_run_modeshigher-UNO-02_15_18-3345/files"),  
+    "U-NO": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/UNO_v1_run_modeshigher-UNO-02_15_18-3345/files"),  
     # "UNO_35.5M_lrscheduler": pathlib.Path("/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_h100_lrcosine-UNO-02_16_14-6522/UNO_v1_run_h100_lrcosine-UNO-02_16_14-6522/files"),
     
 }
@@ -59,7 +56,7 @@ MODEL_PATHS: Dict[str, pathlib.Path] = {
 ERA5_DX_DEG = 25                       # longitude spacing of reference grid
 N_BINS = 200                             # PDF histogram resolution
 EPS = 1e-12                              # avoids log(0)
-OUT_DIR = pathlib.Path("plot_tests_afno")
+OUT_DIR = pathlib.Path("plot_tests_sitbv3")
 OUT_DIR.mkdir(exist_ok=True)
 
 # ──────────────────────────────────────────
@@ -130,6 +127,33 @@ def psd_for_var(stack: np.ndarray, var: str,
     k, psd = get_psd(data, dx_ref, axis=2)
     return k, psd.mean(axis=1).mean(axis=0)
 
+def save_psd_csv(var: str,
+                 k_ref: np.ndarray,
+                 psd_ref: np.ndarray,
+                 k_models: Dict[str, np.ndarray],
+                 psd_models: Dict[str, np.ndarray]) -> pathlib.Path:
+    """Save CERRA and every configured model PSD in one CSV table."""
+    header = ["k", "CERRA"]
+    columns = [k_ref, psd_ref]
+
+    for name, k_m in k_models.items():
+        if len(k_m) != len(k_ref) or not np.allclose(k_m, k_ref):
+            raise ValueError(
+                f"Cannot write one PSD table for {var}: {name} uses a different k grid."
+            )
+        header.append(name)
+        columns.append(psd_models[name])
+
+    out_csv = OUT_DIR / f"{var}_psd.csv"
+    np.savetxt(
+        out_csv,
+        np.column_stack(columns),
+        delimiter=",",
+        header=",".join(header),
+        comments="",
+    )
+    return out_csv
+
 def pdf_for_var(stack: np.ndarray, var: str,
                 bins: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Return bin centres and PDF (density) for flattened variable values."""
@@ -163,19 +187,24 @@ def main() -> None:
             k_m, psd_m = psd_for_var(stack, var, dx_ref, n_ref_lon)
             k_models[name], psd_models[name] = k_m, psd_m
 
-        plt.figure(figsize=(7, 5))
+        plt.figure(figsize=(5.5, 3.5))
         plt.loglog(k_ref, psd_ref, lw=3, c="k", label="CERRA")
         for name, k_m in k_models.items():
             plt.loglog(k_m, psd_models[name], label=name)
         plt.xlabel(r"Wavenumber $k$ (cycles deg$^{-1}$)")
         plt.ylabel("PSD")
-        plt.title(f"PSD of {var} (longitude)")
-        plt.legend()
+        plt.title(f"PSD of {var} (longitude)", pad=4)
+        plt.legend(frameon=False, fontsize=9)
         plt.grid(True, which="both", ls="--", lw=0.5)
-        plt.tight_layout()
+        # plt.grid(True, which="major", ls="--", lw=0.4, alpha=0.3)
+        plt.ylim(1e-4, 1e1)
+        plt.xlim(min(k_ref), max(k_ref))
+        plt.tight_layout(pad = 0.2)
         out_psd = OUT_DIR / f"{var}_psd.png"
-        plt.savefig(out_psd, dpi=200)
+        plt.savefig(out_psd, dpi=300, bbox_inches="tight", pad_inches=0.01)
         plt.close()
+
+        out_csv = save_psd_csv(var, k_ref, psd_ref, k_models, psd_models)
 
         # ----------   PDF (log-scale Y) ----------
         # Build one common bin grid that spans the full range of ALL datasets
@@ -192,7 +221,7 @@ def main() -> None:
         pdf_models = {name: pdf_for_var(stack, var, bins)[1]
                     for name, stack in model_stacks.items()}
 
-        plt.figure(figsize=(7, 4))
+        plt.figure(figsize=(6.4, 4.2))
 
         # CERRA reference curve
         plt.plot(centres_ref,
@@ -214,8 +243,8 @@ def main() -> None:
         plt.savefig(out_pdf, dpi=200)
         plt.close()
 
-
-        print(f"  → saved {out_psd.name}, {out_pdf.name}")
+        
+        print(f"  → saved {out_psd.name}, {out_csv.name}, {out_pdf.name}")
 
     print("\nAll figures saved in", OUT_DIR.resolve())
 

@@ -15,6 +15,22 @@ import torch.nn.functional as F
 import xarray as xr
 import pandas as pd
 
+
+def make_tau(timestamp: pd.Timestamp, H: int, W: int) -> np.ndarray:
+    """
+    Create time embedding (tau) for a given timestamp, repeated across spatial dimensions.
+    """
+    
+    days_in_year = 366 if timestamp.is_leap_year else 365
+    tau = np.array([
+        np.sin(2 * np.pi * timestamp.dayofyear / days_in_year),
+        np.cos(2 * np.pi * timestamp.dayofyear / days_in_year),
+        np.sin(2 * np.pi * timestamp.hour / 24),
+        np.cos(2 * np.pi * timestamp.hour / 24),
+    ], dtype=np.float32)
+ 
+    return np.broadcast_to(tau[:, None, None], (4, H, W)).copy()
+
     
 class ERA5toCERRA2(torch.utils.data.Dataset):
     """
@@ -105,6 +121,14 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
             sample_name_era5 = self.sample_names_era5[idx]
             sample_path_CERRA = os.path.join(self.sample_dir_path_CERRA, f"nwp_{sample_name_CERRA}.npy")
             sample_path_era5 = os.path.join(self.sample_dir_path_era5, f"nwp_{sample_name_era5}.npy")
+
+            # tau = make_tau(
+            #     self.timestamps_CERRA[idx],
+            #     constants.CERRA_grid_size[0],
+            #     constants.CERRA_grid_size[1]
+            # )
+
+
             try:
                 sample_CERRA = torch.tensor(np.load(sample_path_CERRA), dtype=torch.float32)
                 sample_era5 = torch.tensor(np.load(sample_path_era5), dtype=torch.float32)
