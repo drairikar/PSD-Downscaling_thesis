@@ -3,7 +3,7 @@ import random
 import time
 from argparse import ArgumentParser
 import warnings
-
+import copy
 # Third-party
 import pytorch_lightning as pl
 import torch
@@ -16,7 +16,8 @@ from src.models.fno_v1 import FNOWrapper
 from src.models.UNO import UNOWrapper
 from src.models.Yang import DSFNOWrapper
 from src.models.afno import AFNOWrapper
-from src.data import ERA5toCERRA2
+from src.models.unet_seq import UNetSequenceWrapper
+from src.data import ERA5toCERRA2, CerraPriorDatasetSequence
 import os
 import tempfile
 import yaml
@@ -73,7 +74,109 @@ MODELS = {
     "UNO": UNOWrapper,
     "DSFNO": DSFNOWrapper,
     "AFNO": AFNOWrapper,
+    "UNet-Seq": UNetSequenceWrapper,
 }
+
+SEQUENCE_MODELS = {"UNet-Seq"}
+
+SEQUENCE_ONLY_ARGS = {
+    "region",
+    "sequence_length",
+    "cadence",
+    "train_sequence_stride",
+    "sequence_stride",
+    "flatten_sequence",
+    "channel_weights",
+    "sequence_start_time",
+    "train_regions",
+    "val_regions",
+    "test_regions",
+}
+
+def is_sequence_model(model_name):
+    return model_name in SEQUENCE_MODELS
+
+def make_dataset(config, args, split):
+
+    if is_sequence_model(config.model.model_type):
+        if split == "train":
+            stride = getattr(args, "train_sequence_stride", 1)
+        else:
+            stride = getattr(args, "sequence_stride", 8)
+
+        dataset_kwargs = {
+            "root_dir_cerra": config.dataset.cerra_path,
+            "root_dir_era5": config.dataset.era5_path,
+            "split": split,
+            "region": getattr(args, "region", "CentralEurope"),
+            "cerra_vars": [
+                "u10", "v10", "t2m",
+            ],
+            "era5_vars": [
+                "u10", "v10", "t2m",
+            ],
+            "sequence_length": getattr(args, "sequence_length", 8),
+            "sequence_stride": stride,
+
+            "cadence": getattr(
+                args, "cadence", 3
+            ),
+            "flatten": getattr(args, "flatten_sequence", True),
+
+            "n_samples": (
+                config.dataset.subset_size if config.dataset.subset_size else None
+            ),
+        }
+
+        if split == "test":
+            dataset_kwargs[
+                "sequence_start_time"
+            ] = getattr(
+                args,
+                "sequence_start_time",
+                None,
+                )
+
+        return CerraPriorDatasetSequence(**dataset_kwargs)
+
+    return ERA5toCERRA2(
+        config.dataset.cerra_path,
+        config.dataset.era5_path,
+        split = split,
+        subset = bool(
+            config.dataset.subset_size
+        ),
+
+    )
+
+def create_model_args(config, args):
+
+    legacy_args = create_legacy_args_from_config(config)
+
+    if is_sequence_model(config.model.model_type):
+        sequence_defaults = {
+            "sequence_length": 8,
+            "local_window": 3,
+            "sequence_stride": 8,
+            "train_sequence_stride": 1,
+            "cadence": 3,
+            "flatten_sequence": True,
+            "channel_weights": [
+                1.0,
+                1.0,
+                1.0,
+            ],
+        }
+
+        for name, default in sequence_defaults.items():
+            setattr(
+                legacy_args,
+                name,
+                getattr(args, name, default),
+            )
+
+    return legacy_args
+
 
 def get_args():
     """
@@ -565,7 +668,20 @@ def main(args):
     print("  args.dataset_era5  =", args.dataset_era5)
     
     try:
-        config = convert_legacy_config_to_new(args)
+        # config = convert_legacy_config_to_new(args)
+        requested_model = args.model
+        config_args = copy.copy(args)
+        if is_sequence_model(requested_model):
+            config_args.model = "UNet-CNN"
+            for name in SEQUENCE_ONLY_ARGS:
+                if hasattr(config_args, name):
+                    delattr(config_args, name)
+
+        config = convert_legacy_config_to_new(config_args)
+
+        if is_sequence_model(requested_model):
+            config.model.model_type = requested_model
+
         print("✅ Configuration validation passed!")
         
         # If only validating, exit here
@@ -614,14 +730,16 @@ def main(args):
     if config.load:
         # For now, we still need to pass args to the model for backward compatibility
         # This will be updated when we migrate the model classes
-        legacy_args = create_legacy_args_from_config(config)
+        # legacy_args = create_legacy_args_from_config(config)
+        legacy_args = create_model_args(config, args)
         model = model_class.load_from_checkpoint(config.load, args=legacy_args)
         if config.restore_opt:
             # Save for later
             # Unclear if this works for multi-GPU
             model.opt_state = torch.load(config.load)["optimizer_states"][0]
     else:
-        legacy_args = create_legacy_args_from_config(config)
+        # legacy_args = create_legacy_args_from_config(config)
+        legacy_args = create_model_args(config, args)
         model = model_class(legacy_args)
 
     prefix = "subset-" if config.dataset.subset_size else ""
@@ -684,53 +802,68 @@ def main(args):
         utils.init_wandb_metrics(logger)  # Do after wandb.init
 
     if config.eval:
-        eval_loader = torch.utils.data.DataLoader(
-            ERA5toCERRA2(
-                config.dataset.cerra_path,
-                config.dataset.era5_path,
-                split="test",    #TODO: Change to val
-                subset=False,
-            ),
-            config.training.batch_size,
-            shuffle=False,
-            num_workers=config.training.n_workers,
-            persistent_workers=True if config.training.n_workers > 0 else False,
-            multiprocessing_context="spawn" if config.training.n_workers > 0 else None,
+        eval_split = config.eval
+        eval_dataset = make_dataset(
+            config=config,
+            args=args,
+            split=eval_split,
         )
 
-        print(f"Running evaluation on {config.eval}")
-        trainer.test(model=model, dataloaders=eval_loader)
-    else:
-        
-        # Load data
-        train_loader = torch.utils.data.DataLoader(
-            ERA5toCERRA2(
-                config.dataset.cerra_path,
-                config.dataset.era5_path,
-                split="train",
-                subset=bool(config.dataset.subset_size),
-            ),
-            config.training.batch_size,
-            shuffle=True,
-            num_workers=config.training.n_workers,
-            persistent_workers=True if config.training.n_workers > 0 else False,
-            multiprocessing_context="spawn" if config.training.n_workers > 0 else None,
-        )
-        
-        val_loader = torch.utils.data.DataLoader(
-            ERA5toCERRA2(
-                config.dataset.cerra_path,
-                config.dataset.era5_path,
-                split="val",
-                subset=bool(config.dataset.subset_size),
-            ),
-            config.training.batch_size,
+        if hasattr(model, "set_normalization_stats"):
+            model.set_normalization_stats(
+                target_mean=eval_dataset.cerra_mean,
+                target_std=eval_dataset.cerra_std,
+                guidance_mean=eval_dataset.era5_mean,
+                guidance_std=eval_dataset.era5_std,
+            )
+
+        eval_loader = torch.utils.data.DataLoader(
+            eval_dataset,
+            batch_size=config.training.batch_size,
             shuffle=False,
             num_workers=config.training.n_workers,
-            persistent_workers=True if config.training.n_workers > 0 else False,
-            multiprocessing_context="spawn" if config.training.n_workers > 0 else None,
+            persistent_workers=(config.training.n_workers > 0),
+            multiprocessing_context=(
+                "spawn" if config.training.n_workers > 0 else None
+            ),
         )
-        # Train model
+
+        print(f"Running evaluation on {eval_split}")
+        model.current_region = getattr(args, "region", "unknown")
+        trainer.test(model=model, dataloaders=eval_loader)
+    else:
+        train_dataset = make_dataset(
+            config=config,
+            args=args,
+            split="train",
+        )
+        val_dataset = make_dataset(
+            config=config,
+            args=args,
+            split="val",
+        )
+
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=config.training.batch_size,
+            shuffle=True,
+            num_workers=config.training.n_workers,
+            persistent_workers=(config.training.n_workers > 0),
+            multiprocessing_context=(
+                "spawn" if config.training.n_workers > 0 else None
+            ),
+        )
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset,
+            batch_size=config.training.batch_size,
+            shuffle=False,
+            num_workers=config.training.n_workers,
+            persistent_workers=(config.training.n_workers > 0),
+            multiprocessing_context=(
+                "spawn" if config.training.n_workers > 0 else None
+            ),
+        )
+
         trainer.fit(
             model=model,
             train_dataloaders=train_loader,

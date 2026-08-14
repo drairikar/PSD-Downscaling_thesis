@@ -8,7 +8,7 @@ import nvtx
 import torch
 from .unet import UNetWrapper
 import pytorch_lightning as pl
-from ..utils.utils import stochastic_sampler, diffusion_step
+# from ..utils.utils import stochastic_sampler, diffusion_step
 from functools import partial
 
 from .. import constants

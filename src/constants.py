@@ -83,24 +83,26 @@ PARAM_NAMES_SHORT_CERRA = [
     "u_wind",
     "v_wind",
     "t2m",
-    "sshf",
-    "zust",
-    "sp"
+    # "sshf",
+    # "zust",
+    # "sp"
 ]
 
 PARAM_UNITS_CERRA = [
-    "Pa",
-    "Pa",
+    "m/s",
+    "m/s",
     "K",
-    "W/m²",
-    "m/s", 
-    "Pa",
+    # "W/m²",
+    # "m/s", 
+    # "Pa",
 ]
+
+DERIVED_VAR_NAMES = ["vorticity", "divergence", "kinetic_energy"]
 
 # Projection and grid
 # Hard coded for now, but should eventually be part of dataset desc. files
-GRID_SHAPE_CERRA = (368, 368)  # (y, x)
-GRID_SHAPE_ERA5 = (81, 81)  # (y, x)
+GRID_SHAPE_CERRA = (350, 350)  # (y, x)
+GRID_SHAPE_ERA5 = (77, 77)  # (y, x)
 
 # LAMBERT_PROJ_PARAMS = {
 #     "a": 6367470,

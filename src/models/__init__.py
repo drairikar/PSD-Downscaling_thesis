@@ -10,5 +10,6 @@ from .fno_v1 import FNOWrapper
 from .UNO import UNOWrapper
 from .Yang import DSFNOWrapper
 from .afno import AFNOWrapper
+from .unet_seq import UNetSequenceWrapper
 
-__all__ = ['UNetWrapper', 'DiffusionWrapper', 'FNOWrapper', 'UNOWrapper', 'DSFNOWrapper', 'AFNOWrapper']
+__all__ = ['UNetWrapper', 'DiffusionWrapper', 'FNOWrapper', 'UNOWrapper', 'DSFNOWrapper', 'AFNOWrapper', 'UNetSequenceWrapper']

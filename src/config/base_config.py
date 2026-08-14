@@ -125,7 +125,8 @@ class UNetModelConfig(BaseModelConfig):
     def _validate(self):
         self._validate_base()
 
-        valid_architectures = ["SongUNetPosEmbd", 
+        valid_architectures = [  "SongUNet",
+                                "SongUNetPosEmbd", 
                                "UNet-CNN", 
                                'DhariwalUNet',
                                ]

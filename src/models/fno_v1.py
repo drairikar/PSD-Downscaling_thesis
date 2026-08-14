@@ -122,6 +122,7 @@ class FNOWrapper(pl.LightningModule):
         return F_x.float()
 
     def training_step(self, batch, *args):
+        
         img_lr, img_clean, *rest = batch
         img_clean = img_clean.float()
         img_lr = img_lr.float()
