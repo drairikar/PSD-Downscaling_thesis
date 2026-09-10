@@ -7,20 +7,14 @@ import matplotlib.pyplot as plt
 from .. import constants
 from ..utils import vis
 
-from typing import Callable, Optional, Tuple
 import random
 from torchmetrics.functional import structural_similarity_index_measure as ssim_func
 import os
 import numpy as np
-from scipy.fft import fft
-import math
-import torch.nn as nn
 from .unet import RegressionLoss
 from .losses.fourier_losses import FourierLossETH, FourierLossDelft, FourierLossHK, FourierLossCarlo
 from physicsnemo.models.fno import FNO
 # from .rrdb import RRDBNet
-
-from torch.nn import functional as F
 
 
 class FNOWrapper(pl.LightningModule):
@@ -92,34 +86,77 @@ class FNOWrapper(pl.LightningModule):
         **model_kwargs: dict,
     ) -> torch.Tensor:
         """
-        Forward pass of the FNO wrapper model.
+        Predict CERRA fields from the upsampled ERA5 and orography channels.
+
+        ``x`` is the zero-filled target-shaped tensor supplied by
+        :class:`RegressionLoss`. Unlike the U-Net, FNO is conditioned directly
+        on ``img_lr`` and therefore does not concatenate ``x`` to its input.
         """
         expected_hw = (self.img_shape_y, self.img_shape_x)
-        
+
         if img_lr is None:
             raise ValueError("Low-resolution image 'img_lr' must be provided.")
-            
-        if img_lr.shape[-2:] != expected_hw:
+
+        if img_lr.ndim != 4:
             raise ValueError(
-                f"Input tensor has shape {img_lr.shape[1]} channels, "
-                f"but model expects {self.img_in_channels} channels"
-                f"Note coord_features adds 2 extra channels if enabled."
-                f" Expected spatial dimensions {expected_hw}, "
+                "Low-resolution image must have shape [batch, channels, height, "
+                f"width], got {tuple(img_lr.shape)}."
             )
 
+        if img_lr.shape[1] != self.img_in_channels:
+            raise ValueError(
+                f"Low-resolution image has {img_lr.shape[1]} channels, but FNO "
+                f"expects {self.img_in_channels}. Coordinate features are added "
+                "internally and must not be included in img_in_channels."
+            )
+
+        if img_lr.shape[-2:] != expected_hw:
+            raise ValueError(
+                f"Low-resolution image has spatial shape {img_lr.shape[-2:]}, "
+                f"but expected {expected_hw}."
+            )
+
+        if x.ndim != 4:
+            raise ValueError(
+                "Target-shaped input must have shape [batch, channels, height, "
+                f"width], got {tuple(x.shape)}."
+            )
+        if x.shape[0] != img_lr.shape[0]:
+            raise ValueError(
+                f"Batch size mismatch: x has {x.shape[0]} samples and img_lr "
+                f"has {img_lr.shape[0]}."
+            )
+        if x.shape[1] != self.img_out_channels:
+            raise ValueError(
+                f"Target-shaped input has {x.shape[1]} channels, but FNO "
+                f"produces {self.img_out_channels}."
+            )
+        if x.shape[-2:] != expected_hw:
+            raise ValueError(
+                f"Target-shaped input has spatial shape {x.shape[-2:]}, but "
+                f"expected {expected_hw}."
+            )
+
+        # PhysicsNeMo's FNO handles arbitrary spatial sizes and applies its own
+        # configured spectral padding. The multiple-of-32 pad/crop used by
+        # SongUNet is neither needed nor appropriate here.
         img_lr = img_lr.float()
-        # lr_features = self.feature_extractor(img_lr)
-        # if img_lr is not None:
-        #     x = torch.cat((x, img_lr), dim=1) 
-        # # F_x = self.model(x)
-        
         device_type = "cuda" if img_lr.is_cuda else "cpu"
         with torch.autocast(device_type=device_type, enabled=False):
-            F_x = self.model(img_lr)
-            # F_x = self.model(lr_features)
-                            
-      
-        return F_x.float()
+            prediction = self.model(img_lr)
+
+        expected_output_shape = (
+            img_lr.shape[0],
+            self.img_out_channels,
+            *expected_hw,
+        )
+        if prediction.shape != expected_output_shape:
+            raise RuntimeError(
+                f"FNO returned shape {tuple(prediction.shape)}, expected "
+                f"{expected_output_shape}."
+            )
+
+        return prediction.float()
 
     def training_step(self, batch, *args):
         
@@ -201,7 +238,12 @@ class FNOWrapper(pl.LightningModule):
         data_range = (ground_truth.max() - ground_truth.min()).item()
         ssim_all = ssim_func(predictions, ground_truth, data_range=data_range)
 
-        var_names = ['u10', 'v10', 't2m', 'sshf', 'zust']
+        var_names = ["u10", "v10", "t2m"]
+        if predictions.shape[1] != len(var_names):
+            raise ValueError(
+                f"Expected {len(var_names)} output channels for {var_names}, "
+                f"got {predictions.shape[1]}."
+            )
         # mse_vars, mae_vars, rmse_vars, ssim_vars = {}, {}, {}, {}
         log_metrics = {}
 

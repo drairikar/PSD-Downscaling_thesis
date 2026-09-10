@@ -23,22 +23,14 @@ import matplotlib.pyplot as plt
 from .. import constants
 from ..utils import vis
 
-from typing import Callable, Optional, Tuple
 import random
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 import os
 import numpy as np
-from scipy.fft import fft
-import math
-import torch.nn as nn
-import torch.nn.functional as F
 from .unet import RegressionLoss
 from .losses.fourier_losses import FourierLossETH, FourierLossDelft, FourierLossHK, FourierLossCarlo
 
 from neuralop.models import UNO
-from neuralop import Trainer
-from torch.optim import AdamW
-from neuralop.utils import count_model_params
 
 # Creating the U-NO model
 # ------------------------
@@ -97,32 +89,82 @@ class UNOWrapper(pl.LightningModule):
         self.loss_fn = RegressionLoss(args.init_lambda, args.max_lambda, args.anneal_epochs, loss_func)
 
     def forward(self, 
-    x: torch.Tensor,
-    img_lr: torch.Tensor,
-    **model_kwargs: dict,
+        x: torch.Tensor,
+        img_lr: torch.Tensor,
+        **model_kwargs: dict,
     ) -> torch.Tensor:
+        """Predict CERRA fields from ERA5 and orography conditioning.
 
-        del x # not used, but kept for compatibility with Trainer and loss function signatures
+        ``x`` is the zero-filled target-shaped tensor supplied by
+        :class:`RegressionLoss`. UNO is conditioned directly on ``img_lr`` and
+        keeps ``x`` only for compatibility with the shared deterministic-model
+        interface.
+        """
+
         expected_hw = (self.img_shape_y, self.img_shape_x)
-        
+
         if img_lr is None:
             raise ValueError("Low-resolution image 'img_lr' must be provided.")
-            
+
+        if img_lr.ndim != 4:
+            raise ValueError(
+                "Low-resolution image must have shape [batch, channels, height, "
+                f"width], got {tuple(img_lr.shape)}."
+            )
+
+        if img_lr.shape[1] != self.img_in_channels:
+            raise ValueError(
+                f"Low-resolution image has {img_lr.shape[1]} channels, but UNO "
+                f"expects {self.img_in_channels}. Positional grid features are "
+                "added internally and must not be included in img_in_channels."
+            )
+
         if img_lr.shape[-2:] != expected_hw:
             raise ValueError(
-                f"Input tensor has shape {img_lr.shape[1]} channels, "
-                f"but model expects {self.img_in_channels} channels"
-                f"Note coord_features adds 2 extra channels if enabled."
-                f" Expected spatial dimensions {expected_hw}, "
+                f"Low-resolution image has spatial shape {img_lr.shape[-2:]}, "
+                f"but expected {expected_hw}."
+            )
+
+        if x.ndim != 4:
+            raise ValueError(
+                "Target-shaped input must have shape [batch, channels, height, "
+                f"width], got {tuple(x.shape)}."
+            )
+        if x.shape[0] != img_lr.shape[0]:
+            raise ValueError(
+                f"Batch size mismatch: x has {x.shape[0]} samples and img_lr "
+                f"has {img_lr.shape[0]}."
+            )
+        if x.shape[1] != self.img_out_channels:
+            raise ValueError(
+                f"Target-shaped input has {x.shape[1]} channels, but UNO "
+                f"produces {self.img_out_channels}."
+            )
+        if x.shape[-2:] != expected_hw:
+            raise ValueError(
+                f"Target-shaped input has spatial shape {x.shape[-2:]}, but "
+                f"expected {expected_hw}."
             )
 
         img_lr = img_lr.float()
-        
+
         device_type = "cuda" if img_lr.is_cuda else "cpu"
         with torch.autocast(device_type=device_type, enabled=False):
-            F_x = self.model(img_lr)
-                
-        return F_x.float()
+            prediction = self.model(img_lr)
+
+        expected_output_shape = (
+            img_lr.shape[0],
+            self.img_out_channels,
+            *expected_hw,
+        )
+        if prediction.shape != expected_output_shape:
+            raise RuntimeError(
+                f"UNO returned shape {tuple(prediction.shape)}, expected "
+                f"{expected_output_shape}. Check that the product of "
+                "uno_scalings is 1 along each spatial dimension."
+            )
+
+        return prediction.float()
         
     
     def training_step(self, batch, *args):
@@ -210,7 +252,12 @@ class UNOWrapper(pl.LightningModule):
         # data_range = (ground_truth.max() - ground_truth.min()).item()
         # ssim_all = ssim(predictions, ground_truth, data_range=data_range).detach()
 
-        var_names = ['u10', 'v10', 't2m', 'sshf', 'zust']
+        var_names = ["u10", "v10", "t2m"]
+        if predictions.shape[1] != len(var_names):
+            raise ValueError(
+                f"Expected {len(var_names)} output channels for {var_names}, "
+                f"got {predictions.shape[1]}."
+            )
         log_metrics = {}
 
         for i, var_name in enumerate(var_names):

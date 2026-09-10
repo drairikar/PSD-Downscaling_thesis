@@ -35,6 +35,7 @@ class DatasetConfig:
     """Dataset configuration with validation."""
     cerra_path: str
     era5_path: str
+    region: str = "CentralEurope"
     img_in_channels: int = 5
     img_out_channels: int = 5
     img_resolution: List[int] = field(default_factory=lambda: [300, 300])
@@ -452,7 +453,8 @@ class ExperimentConfig:
             'subset_ds': 'subset_size',
         }
         dataset_keys = [
-            'img_in_channels', 'img_out_channels', 'img_resolution', 'standardize'
+            'region', 'img_in_channels', 'img_out_channels', 'img_resolution',
+            'standardize'
         ]
         
         for old_key, new_key in dataset_mappings.items():

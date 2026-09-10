@@ -7,6 +7,7 @@ model: UNet-Seq                 # Model architecture
 subset_ds: 0                      # 0 = full dataset, >0 = subset size
 region: "CentralEurope"              # Region for downscaling
 sequence_length: 8
+local_window: 3
 cadence: 3
 train_sequence_stride: 1
 sequence_stride: 8
@@ -24,7 +25,7 @@ run_name: UNet      # Optional run name
 # DATASET SETTINGS
 # ===========================
 output_variables: null             # List of vars to predict
-img_in_channels: 25
+img_in_channels: 10
 img_out_channels: 3
 img_resolution: [350, 350]
 

@@ -1,25 +1,25 @@
 # =========================
 # GENERAL OPTIONS
 # =========================
-dataset_cerra: "/projects/0/prjs0951/Devashish/NeurIPS-workshop/CentralEurope_2014_2020/CERRA" 
-dataset_era5: "/projects/0/prjs0951/Devashish/NeurIPS-workshop/CentralEurope_2014_2020/ERA5"
+dataset_cerra: "/projects/0/prjs0951/Carlo/zz_processed_data_new/CERRA"
+dataset_era5: "/projects/0/prjs0951/Carlo/zz_processed_data_new/ERA5"
 model: UNO                 # Model architecture
 subset_ds: 0                   # 0 = full dataset, >0 = subset size
 seed: 32
 n_workers: 16                   # Dataloader workers
-load: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/min_val_loss.ckpt"
-restore_opt: 1                    # 0 = do not restore optimizer
+load: null
+restore_opt: 0                    # 0 = do not restore optimizer
 precision: "32"              # 32 | 16 | 16-mixed | bf16
-eval: test                    # val | test | null → train
+eval: null                    # val | test | null → train
 wandb_project: UNO_run
-run_name: UNO_v3_run_h100_test    # Optional run name
+run_name: UNO_final    # Optional run name
 # =========================
 # DATASET SETTINGS
 # =========================
 output_variables: null             # List of vars to predict
-img_in_channels: 15        ##from 15
-img_out_channels: 5
-img_resolution: [368, 368]
+img_in_channels: 4                 # ERA5 u10/v10/t2m + CERRA orography
+img_out_channels: 3                # CERRA u10/v10/t2m
+img_resolution: [350, 350]
 
 # =========================
 # MODEL SETTINGS
@@ -54,4 +54,4 @@ init_lambda: 0.0
 max_lambda: 0.0001
 loss_type: 'Fourier_Carlo'
 resume: null
-savepreds_path: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/UNO_v1_run_modeshigher-UNO-02_15_18-3345/"
+savepreds_path: null

@@ -148,66 +148,160 @@ class UNetSequenceWrapper(pl.LightningModule):
             persistent=False,
         )
 
-    def _prepare_sequence(self, tensor):
-        """
-        [B, T, C, H, W] -> [B, T*C, H, W]
-        """
-        if tensor.ndim == 5:
-            batch, time, channels, height, width = tensor.shape
+    def _trajectory_to_5d(self, tensor):
 
-            if time != self.sequence_length:
+        if tensor.ndim == 5:
+            if tensor.shape[1]!= self.sequence_length:
                 raise ValueError(
                     f"Expected sequence length {self.sequence_length}, "
-                    f"but got {time}."
-                )
-            if channels != self.frame_channels:
-                raise ValueError(
-                    f"Expected frame channels {self.frame_channels}, "
-                    f"but got {channels}."
-                )
-
-            return tensor.flatten(1,2)
-
-        if tensor.ndim == 4:
-            if tensor.shape[1] != self.sequence_channels:
-                raise ValueError(
-                    f"Expected sequence channels {self.sequence_channels}, "
                     f"but got {tensor.shape[1]}."
                 )
             
+            if tensor.shape[2] != self.frame_channels:
+                raise ValueError(
+                    f"Expected C={self.frame_channels}, "
+                    f"got C={tensor.shape[2]}."
+                )
+
             return tensor
 
-        raise ValueError(
-            f"Expected tensor of shape [B, T, C, H, W] or [B, T*C, H, W], "
-            f"but got {tensor.shape}."
-        )
+        if tensor.ndim == 4:
+            if tensor.shape[1] != self.trajectory_channels:
+                raise ValueError(
+                    f"Expected {self.trajectory_channels} channels, "
+                    f"got {tensor.shape[1]}."
+                )
 
-    
-    def _restore_sequence(self, tensor):
-        """
-        [B, T*C, H, W] -> [B, T, C, H, W]
-        """
-
-        if tensor.ndim!= 4:
-            raise ValueError(
-                f"Expected tensor of shape [B, T*C, H, W], "
-                f"but got {tensor.shape}."
+            return tensor.unflatten(
+                dim=1,
+                sizes=(
+                    self.sequence_length,
+                    self.frame_channels,
+                ),
             )
 
-        return tensor.unflatten(
-            dim=1,
-            sizes = (self.sequence_length, self.frame_channels)
+        raise ValueError(
+            "Expected [B,T,C,H,W] or [B,T*C,H,W], "
+            f"got {tuple(tensor.shape)}."
         )
+
+    def _local_to_5d(self, tensor):
+
+        if tensor.ndim == 5:
+            if tensor.shape[1] != self.local_window:
+                raise ValueError(
+                    f"Expected local window {self.local_window}, "
+                    f"but got {tensor.shape[1]}."
+                )
+
+            if tensor.shape[2] != self.frame_channels:
+                raise ValueError(
+                    f"Expected C={self.frame_channels}, "
+                    f"got C={tensor.shape[2]}."
+                )
+
+            return tensor
+
+        if tensor.ndim == 4:
+            if tensor.shape[1] != self.local_channels:
+                raise ValueError(
+                    f"Expected {self.local_channels} channels, "
+                    f"got {tensor.shape[1]}."
+                )
+
+            return tensor.unflatten(
+                dim=1,
+                sizes=(
+                    self.local_window,
+                    self.frame_channels,
+                ),
+            )
+
+        raise ValueError(
+            "Expected [B,L,C,H,W] or [B,L*C,H,W], "
+            f"got {tuple(tensor.shape)}."
+        )
+
+    def _select_local_window(self, cerra, era5, random_window):
+
+        cerra = self._trajectory_to_5d(cerra)
+        era5 = self._trajectory_to_5d(era5)
+
+        max_start = self.sequence_length - self.local_window
+
+        if random_window and max_start > 0:
+            start = torch.randint(low=0, high=max_start + 1, size=(1,), device=cerra.device).item()
+        else:
+            start = max_start // 2
+
+        stop = start + self.local_window
+
+        return cerra[:, start:stop], era5[:, start:stop]
+
+    def predict_trajectory(self, guidance, orography):
+
+        if guidance.ndim == 4:
+            guidance = self._trajectory_to_5d(guidance)
+
+        elif guidance.ndim == 5:
+            if guidance.shape[2] != self.frame_channels:
+                raise ValueError(
+                    f"Expected C={self.frame_channels}, "
+                    f"got C={guidance.shape[2]}."
+                )
+        
+        else:
+            raise ValueError(
+                "Expected [B,T,C,H,W] or [B,T*C,H,W], "
+                f"got {tuple(guidance.shape)}."
+            )
+
+        total_time = guidance.shape[1]
+        window = self.local_window
+        half_window = window // 2  
+
+        if total_time < window:
+            raise ValueError(
+                f"Total time {total_time} is less than local window {window}."
+            )
+
+        window_predictions = {}
+        output_frames = []
+
+        for temporal_idx in range(total_time):
+            start = min(
+                max(temporal_idx - half_window, 0),
+                total_time - window
+            )
+            stop = start + window
+            local_idx = temporal_idx - start
+
+            if start not in window_predictions:
+                window_predictions[start] = self(guidance=guidance[:, start:stop], orography=orography)
+
+            output_frames.append(window_predictions[start][:, local_idx])
+
+        return torch.stack(output_frames, dim=1)
 
     
 
     def forward(self, guidance, orography):
 
-        guidance = self._prepare_sequence(guidance).float()
+        guidance = self._local_to_5d(guidance).float()
+        batch_size = guidance.shape[0]
+        guidance_flat = guidance.flatten(1,2)
+        if guidance_flat.shape[-2:] != self.output_size:
+            guidance_flat = F.interpolate(
+                guidance_flat,
+                size=self.output_size,
+                mode="bicubic",
+                align_corners=False
+            )
+
         orography = orography.float()
 
-        if guidance.shape[-2:]!= self.output_size:
-            guidance = F.interpolate(guidance, size= self.output_size, mode="bicubic", align_corners=False)
+        # if guidance.shape[-2:]!= self.output_size:
+        #     guidance = F.interpolate(guidance, size= self.output_size, mode="bicubic", align_corners=False)
 
         if orography.shape[-2:]!= self.output_size:
             raise ValueError(
@@ -218,7 +312,7 @@ class UNetSequenceWrapper(pl.LightningModule):
                 f"Orography has {orography.shape[1]} channels, expected 1."
             )
 
-        model_input = torch.cat([guidance, orography.to(guidance.dtype)], dim=1)
+        model_input = torch.cat([guidance_flat, orography], dim=1)
 
         if model_input.shape[1] != self.network_in_channels:
             raise ValueError(
@@ -243,20 +337,20 @@ class UNetSequenceWrapper(pl.LightningModule):
         prediction = self.model(model_input, noise_labels, class_labels=None)
         prediction = prediction[..., :H, :W]
 
-        return prediction.float()
+        return prediction.unflatten(dim=1, sizes=(self.local_window, self.frame_channels)).float()
 
     def training_step(self, batch, *args):
 
-        cerra_target, orography, era5 = batch
-        cerra_target = self._prepare_sequence(cerra_target).float()
+        cerra, orography, era5 = batch
+        cerra_local, era5_local = self._select_local_window(cerra, era5, random_window=True)
 
         prediction = self(
-            guidance=era5,
+            guidance=era5_local,
             orography=orography
         )
 
         # squared_error = (prediction - cerra_target) ** 2
-        loss = F.mse_loss(prediction, cerra_target)
+        loss = F.mse_loss(prediction, cerra_local.float())
 
         self.log(
             "train_loss",
@@ -271,15 +365,15 @@ class UNetSequenceWrapper(pl.LightningModule):
 
     def validation_step(self, batch, *args):
 
-        cerra_target, orography, era5 = batch
-        cerra_target = self._prepare_sequence(cerra_target).float()
+        cerra, orography, era5 = batch
+        cerra_local, era5_local = self._select_local_window(cerra, era5, random_window=False)
 
         prediction = self(
-            guidance=era5,
+            guidance=era5_local,
             orography=orography
         )
 
-        loss = F.mse_loss(prediction, cerra_target)
+        loss = F.mse_loss(prediction, cerra_local.float())
 
         self.log(
             "val_loss",
@@ -307,16 +401,11 @@ class UNetSequenceWrapper(pl.LightningModule):
         """
 
         cerra_target, orography, era5 = batch
-        cerra_target = self._prepare_sequence(cerra_target).float()
-        prediction = self(
-            guidance=era5,
-            orography=orography
-        )
-
-        pred_sequence = self._restore_sequence(prediction)
-        target_sequence = self._restore_sequence(cerra_target)
-
-        era5_sequence = self._restore_sequence(self._prepare_sequence(era5))
+        target_sequence = self._trajectory_to_5d(cerra_target).float()
+        era5_sequence = self._trajectory_to_5d(era5).float()
+        
+        prediction_sequence = self.predict_trajectory(guidance=era5_sequence, orography=orography)
+        
 
         if not hasattr(self, "sequence_mean"):
             raise RuntimeError(
@@ -326,28 +415,28 @@ class UNetSequenceWrapper(pl.LightningModule):
             )
 
         mean = self.sequence_mean.to(
-            device=pred_sequence.device,
-            dtype=pred_sequence.dtype,
+            device=prediction_sequence.device,
+            dtype=prediction_sequence.dtype,
         )
         std = self.sequence_std.to(
-            device=pred_sequence.device,
-            dtype=pred_sequence.dtype,
+            device=prediction_sequence.device,
+            dtype=prediction_sequence.dtype,
         )
 
-        pred_physical = pred_sequence * std + mean
+        pred_physical = prediction_sequence * std + mean
         target_physical = target_sequence * std + mean
 
-        guidance_mean = self.guidance_sequence_mean.to(
-            device=pred_sequence.device,
-            dtype=pred_sequence.dtype,
-        )
+        # guidance_mean = self.guidance_sequence_mean.to(
+        #     device=prediction_sequence.device,
+        #     dtype=prediction_sequence.dtype,
+        # )
 
-        guidance_std = self.guidance_sequence_std.to(
-            device=pred_sequence.device,
-            dtype=pred_sequence.dtype,
-        )
+        # guidance_std = self.guidance_sequence_std.to(
+        #     device=prediction_sequence.device,
+        #     dtype=prediction_sequence.dtype,
+        # )
 
-        era5_physical = era5_sequence * guidance_std + guidance_mean
+        # era5_physical = era5_sequence * guidance_std + guidance_mean
 
         # Sum errors over batch, time, and space, leaving one value per
         # physical variable. Accumulate in float64 for numerical stability.
@@ -600,6 +689,26 @@ class UNetSequenceWrapper(pl.LightningModule):
         save_dir = Path("psd_plots_Unet_seq") / run_name / "psd" / region
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{var_name}.png"
+
+        # Persist the exact arrays used for the plot so PSD comparisons with
+        # other models (for example DPS) do not depend on digitising the PNG or
+        # reconstructing values from W&B's log10 scalar history.  Keep both the
+        # descriptive names and the shorter target/prediction aliases to make
+        # downstream comparison scripts straightforward.
+        np.savez_compressed(
+            save_dir / f"{var_name}.npz",
+            k_cerra=k_tgt,
+            psd_cerra=psd_tgt,
+            k_prediction=k_pred,
+            psd_prediction=psd_pred,
+            k_target=k_tgt,
+            psd_target=psd_tgt,
+            k_pred=k_pred,
+            psd_pred=psd_pred,
+            variable=np.asarray(var_name),
+            region=np.asarray(region),
+            prediction_label=np.asarray(run_name),
+        )
 
         fig, ax = plt.subplots()
         ax.plot(np.log10(k_tgt[valid_tgt]), np.log10(psd_tgt[valid_tgt]), label="CERRA", linewidth=2)

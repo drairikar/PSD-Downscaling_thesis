@@ -1,49 +1,27 @@
-# Standard library
-import datetime as dt
-import glob
+"""Single-frame ERA5-to-CERRA datasets."""
+
 import os
 
-# Third-party
 import numpy as np
-import torch
-
-# First-party
-from src import config, constants, utils
-
-import torch.nn.functional as F
-
-import xarray as xr
 import pandas as pd
+import torch
+import torch.nn.functional as F
+import xarray as xr
 
 
-def make_tau(timestamp: pd.Timestamp, H: int, W: int) -> np.ndarray:
-    """
-    Create time embedding (tau) for a given timestamp, repeated across spatial dimensions.
-    """
-    
-    days_in_year = 366 if timestamp.is_leap_year else 365
-    tau = np.array([
-        np.sin(2 * np.pi * timestamp.dayofyear / days_in_year),
-        np.cos(2 * np.pi * timestamp.dayofyear / days_in_year),
-        np.sin(2 * np.pi * timestamp.hour / 24),
-        np.cos(2 * np.pi * timestamp.hour / 24),
-    ], dtype=np.float32)
- 
-    return np.broadcast_to(tau[:, None, None], (4, H, W)).copy()
+DYNAMIC_VARS = ["u10", "v10", "t2m", "sshf", "zust", "sp"]
 
-    
+
 class ERA5toCERRA2(torch.utils.data.Dataset):
+    """Load independent ERA5/CERRA timestamp pairs from regional NetCDF files.
+
+    Every timestamp is one sample. ERA5 dynamic fields are interpolated onto
+    the CERRA grid and concatenated with normalized CERRA orography. Training
+    and validation return ``(conditioning, target)``; testing additionally
+    returns normalization statistics and a timestamp name, as expected by the
+    deterministic model wrappers.
     """
-    For our dataset:
-    N_t' = 65
-    N_t = 65//subsample_step (= 21 for 3h steps)
-    dim_x = 268
-    dim_y = 238
-    N_grid = 268x238 = 63784
-    d_features = 17 (d_features' = 18)
-    d_forcing = 5
-    """
-    
+
     def __init__(
         self,
         dataset_name_CERRA,
@@ -51,165 +29,250 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         split,
         standardize=True,
         subset=False,
-                       
+        region="CentralEurope",
+        cerra_vars=("u10", "v10", "t2m"),
+        era5_vars=("u10", "v10", "t2m"),
+        n_samples=None,
     ):
         super().__init__()
-        
-        assert split in ("train", "val", "test"), "Unknown dataset split"
-        
-        # Determine mode based on which dataset names are provided.
-        if dataset_name_CERRA is None and dataset_name_ERA5 is None:
-            raise ValueError("At least one dataset must be provided.")
-        elif dataset_name_CERRA is not None and dataset_name_ERA5 is not None:
-            self.mode = "both"
-        elif dataset_name_CERRA is not None:
-            self.mode = "CERRA_only"
-        else:
-            self.mode = "ERA5_only"
-        
-        member_file_regexp = "*.npy"
-        
+
+        if split not in ("train", "val", "test"):
+            raise ValueError(f"Unknown dataset split: {split}")
+        if dataset_name_CERRA is None or dataset_name_ERA5 is None:
+            raise ValueError(
+                "Deterministic ERA5-to-CERRA training requires both datasets."
+            )
+
+        self.root_dir_cerra = dataset_name_CERRA
+        self.root_dir_era5 = dataset_name_ERA5
         self.split = split
-                 
-        # Load CERRA dataset if available.
-        if self.mode in ("both", "CERRA_only"):
-            self.sample_dir_path_CERRA = os.path.join("data", dataset_name_CERRA, "samples", split)
-            sample_paths_CERRA = glob.glob(os.path.join(self.sample_dir_path_CERRA, member_file_regexp))
-            self.sample_names_CERRA = sorted([os.path.basename(path)[4:-4] for path in sample_paths_CERRA])
-        
-        # Load ERA5 dataset if available.
-        if self.mode in ("both", "ERA5_only"):
-            self.sample_dir_path_era5 = os.path.join("data", dataset_name_ERA5, "samples", split)
-            sample_paths_era5 = glob.glob(os.path.join(self.sample_dir_path_era5, member_file_regexp))
-            self.sample_names_era5 = sorted([os.path.basename(path)[4:-4] for path in sample_paths_era5])
-        
-        # Optionally restrict to a subset of samples.
-        if subset:
-            if self.mode in ("both", "CERRA_only"):
-                self.sample_names_CERRA = self.sample_names_CERRA[:5000]
-            if self.mode in ("both", "ERA5_only"):
-                self.sample_names_era5 = self.sample_names_era5[:5000]
-        
-        # Set up standardization if requested.
-        self.standardize = standardize
-        if standardize:
-            if self.mode in ("both", "CERRA_only"):
-                ds_stats_CERRA = utils.load_dataset_stats(dataset_name_CERRA, "cpu")
-                self.data_mean_CERRA, self.data_std_CERRA = ds_stats_CERRA["data_mean"], ds_stats_CERRA["data_std"]
-                print("CERRA path: ", self.sample_dir_path_CERRA)
-                
-            if self.mode in ("both", "ERA5_only"):
-                ds_stats_era5 = utils.load_dataset_stats(dataset_name_ERA5, "cpu")
-                self.data_mean_era5, self.data_std_era5 = ds_stats_era5["data_mean"], ds_stats_era5["data_std"]
-                print("ERA5 path: ", self.sample_dir_path_era5)
-        
-        # If subsampling should occur (only during training)
-        self.random_subsample = (split == "train")
-    
+        self.standardize = bool(standardize)
+        self.region = region
+        self.cerra_vars = list(cerra_vars)
+        self.era5_vars = list(era5_vars)
+
+        unknown_vars = (
+            set(self.cerra_vars) | set(self.era5_vars)
+        ) - set(DYNAMIC_VARS)
+        if unknown_vars:
+            raise ValueError(
+                f"No normalization statistics are defined for {sorted(unknown_vars)}."
+            )
+
+        cerra_path = os.path.join(
+            dataset_name_CERRA, split, f"{region}.nc"
+        )
+        era5_path = os.path.join(
+            dataset_name_ERA5, split, f"{region}.nc"
+        )
+        static_path = os.path.join(
+            dataset_name_CERRA, split, f"static_{region}.nc"
+        )
+
+        print("CERRA path:", cerra_path)
+        print("ERA5 path:", era5_path)
+
+        self.cerra_ds = xr.open_dataset(cerra_path, engine="h5netcdf")
+        self.era5_ds = xr.open_dataset(era5_path, engine="h5netcdf")
+
+        cerra_time = pd.DatetimeIndex(self.cerra_ds.time.values)
+        era5_time = pd.DatetimeIndex(self.era5_ds.time.values)
+        self._validate_time(cerra_time, "CERRA")
+        self._validate_time(era5_time, "ERA5")
+        if not cerra_time.equals(era5_time):
+            raise ValueError(
+                "CERRA and ERA5 timestamps do not match exactly for "
+                f"split={split!r}, region={region!r}."
+            )
+
+        self.time = cerra_time
+        self.indices = np.arange(len(self.time), dtype=np.int64)
+
+        if subset and n_samples is None:
+            n_samples = 5000
+        if n_samples is not None:
+            n_samples = int(n_samples)
+            if n_samples < 1:
+                raise ValueError(f"n_samples must be positive, got {n_samples}.")
+            self.indices = self.indices[:n_samples]
+
+        stats_dir = os.path.join(dataset_name_ERA5, "statistics")
+        dynamic_mean = np.load(
+            os.path.join(stats_dir, "dynamic_mean.npy")
+        ).astype(np.float32)
+        dynamic_std = np.load(
+            os.path.join(stats_dir, "dynamic_std.npy")
+        ).astype(np.float32)
+        expected_stats_shape = (len(DYNAMIC_VARS),)
+        if dynamic_mean.shape != expected_stats_shape:
+            raise ValueError(
+                "dynamic_mean.npy must contain one value per dynamic variable; "
+                f"expected {expected_stats_shape}, got {dynamic_mean.shape}."
+            )
+        if dynamic_std.shape != expected_stats_shape:
+            raise ValueError(
+                "dynamic_std.npy must contain one value per dynamic variable; "
+                f"expected {expected_stats_shape}, got {dynamic_std.shape}."
+            )
+
+        stats_index = {
+            variable: index for index, variable in enumerate(DYNAMIC_VARS)
+        }
+        cerra_stats_idx = [stats_index[var] for var in self.cerra_vars]
+        era5_stats_idx = [stats_index[var] for var in self.era5_vars]
+
+        # Match dataset_seq.py: shared dynamic statistics stored below the
+        # ERA5 root normalize both guidance and target variables.
+        self.data_mean_CERRA = torch.from_numpy(dynamic_mean[cerra_stats_idx])
+        self.data_std_CERRA = torch.from_numpy(dynamic_std[cerra_stats_idx])
+        self.data_mean_era5 = torch.from_numpy(dynamic_mean[era5_stats_idx])
+        self.data_std_era5 = torch.from_numpy(dynamic_std[era5_stats_idx])
+
+        if torch.any(self.data_std_CERRA <= 0):
+            raise ValueError("CERRA standard deviations must be positive.")
+        if torch.any(self.data_std_era5 <= 0):
+            raise ValueError("ERA5 standard deviations must be positive.")
+
+        forcing_mean = np.asarray(
+            np.load(os.path.join(stats_dir, "forcing_mean.npy")),
+            dtype=np.float32,
+        ).reshape(-1)
+        forcing_std = np.asarray(
+            np.load(os.path.join(stats_dir, "forcing_std.npy")),
+            dtype=np.float32,
+        ).reshape(-1)
+        if forcing_mean.size != 1 or forcing_std.size != 1:
+            raise ValueError(
+                "Expected scalar forcing statistics for the orography channel, "
+                f"got mean={forcing_mean.shape}, std={forcing_std.shape}."
+            )
+
+        self.orography_mean = torch.tensor(
+            float(forcing_mean[0]), dtype=torch.float32
+        )
+        self.orography_std = torch.tensor(
+            float(forcing_std[0]), dtype=torch.float32
+        )
+        if self.orography_std <= 0:
+            raise ValueError("Orography standard deviation must be positive.")
+
+        with xr.open_dataset(static_path, engine="h5netcdf") as static_ds:
+            orography = (
+                static_ds["orog"]
+                .squeeze(drop=True)
+                .values.astype(np.float32)
+            )
+        if orography.ndim != 2:
+            raise ValueError(
+                "Expected two-dimensional orography after squeezing singleton "
+                f"dimensions, got {orography.shape}."
+            )
+
+        self.orography = torch.from_numpy(orography).unsqueeze(0)
+        if self.standardize:
+            self.orography = (
+                self.orography - self.orography_mean
+            ) / self.orography_std
+        self.output_size = tuple(self.orography.shape[-2:])
+
+    @staticmethod
+    def _validate_time(time, dataset_name):
+        if time.has_duplicates:
+            raise ValueError(f"{dataset_name} contains duplicate timestamps.")
+        if not time.is_monotonic_increasing:
+            raise ValueError(f"{dataset_name} timestamps are not sorted.")
+
+    @staticmethod
+    def _load_frame(dataset, variables, time_index):
+        frame = (
+            dataset[list(variables)]
+            .isel(time=int(time_index))
+            .to_array(dim="variable")
+            .sel(variable=list(variables))
+            .transpose("variable", ...)
+            .values.astype(np.float32)
+        )
+        if frame.ndim != 3:
+            raise ValueError(
+                "Expected [variable, height, width], "
+                f"received {frame.shape}."
+            )
+        return torch.from_numpy(frame)
+
     def __len__(self):
-        if self.mode == "both":
-            assert len(self.sample_names_CERRA) == len(self.sample_names_era5), "Different number of samples in CERRA and ERA5"
-            return len(self.sample_names_CERRA)
-        elif self.mode == "CERRA_only":
-            return len(self.sample_names_CERRA)
-        else:  # ERA5_only
-            return len(self.sample_names_era5)
-    
+        return len(self.indices)
+
     def __getitem__(self, idx):
-        if self.mode == "both":
-            sample_name_CERRA = self.sample_names_CERRA[idx]
-            sample_name_era5 = self.sample_names_era5[idx]
-            sample_path_CERRA = os.path.join(self.sample_dir_path_CERRA, f"nwp_{sample_name_CERRA}.npy")
-            sample_path_era5 = os.path.join(self.sample_dir_path_era5, f"nwp_{sample_name_era5}.npy")
+        time_index = int(self.indices[idx])
+        sample_CERRA = self._load_frame(
+            self.cerra_ds, self.cerra_vars, time_index
+        )
+        sample_era5 = self._load_frame(
+            self.era5_ds, self.era5_vars, time_index
+        )
 
-            # tau = make_tau(
-            #     self.timestamps_CERRA[idx],
-            #     constants.CERRA_grid_size[0],
-            #     constants.CERRA_grid_size[1]
-            # )
+        sample_era5 = F.interpolate(
+            sample_era5.unsqueeze(0),
+            size=self.output_size,
+            mode="bicubic",
+            align_corners=False,
+        ).squeeze(0)
+
+        if sample_CERRA.shape[-2:] != self.output_size:
+            raise ValueError(
+                f"CERRA frame has shape {sample_CERRA.shape[-2:]}, "
+                f"but static data have shape {self.output_size}."
+            )
+
+        if self.standardize:
+            sample_CERRA = (
+                sample_CERRA - self.data_mean_CERRA[:, None, None]
+            ) / self.data_std_CERRA[:, None, None]
+            sample_era5 = (
+                sample_era5 - self.data_mean_era5[:, None, None]
+            ) / self.data_std_era5[:, None, None]
+
+        conditioning = torch.cat([sample_era5, self.orography], dim=0)
+
+        if self.split != "test":
+            return conditioning, sample_CERRA
+
+        if self.standardize:
+            target_mean = self.data_mean_CERRA
+            target_std = self.data_std_CERRA
+            conditioning_mean = torch.cat(
+                [self.data_mean_era5, self.orography_mean.reshape(1)]
+            )
+            conditioning_std = torch.cat(
+                [self.data_std_era5, self.orography_std.reshape(1)]
+            )
+        else:
+            target_mean = torch.zeros_like(self.data_mean_CERRA)
+            target_std = torch.ones_like(self.data_std_CERRA)
+            conditioning_mean = torch.zeros(
+                conditioning.shape[0], dtype=torch.float32
+            )
+            conditioning_std = torch.ones(
+                conditioning.shape[0], dtype=torch.float32
+            )
+
+        statistics = {
+            "mean_CERRA": target_mean[:, None, None],
+            "std_CERRA": target_std[:, None, None],
+            "mean_era5": conditioning_mean[:, None, None],
+            "std_era5": conditioning_std[:, None, None],
+        }
+        timestamp_name = self.time[time_index].strftime("%Y%m%dT%H%M%S")
+        return conditioning, sample_CERRA, statistics, timestamp_name
+
+    def close(self):
+        cerra_ds = getattr(self, "cerra_ds", None)
+        era5_ds = getattr(self, "era5_ds", None)
+        if cerra_ds is not None:
+            cerra_ds.close()
+        if era5_ds is not None:
+            era5_ds.close()
 
 
-            try:
-                sample_CERRA = torch.tensor(np.load(sample_path_CERRA), dtype=torch.float32)
-                sample_era5 = torch.tensor(np.load(sample_path_era5), dtype=torch.float32)
-            except ValueError:
-                print(f"Failed to load {sample_path_CERRA}")
-                print(f"Failed to load {sample_path_era5}")
-            # Flatten spatial dimensions.
-            sample_CERRA = sample_CERRA.permute(2, 0, 1)
-            sample_era5 = sample_era5.permute(2, 0, 1)
-            
-            sample_era5 = self.upsample(sample_era5, sample_CERRA)
-            
-            if self.standardize:
-                sample_CERRA = (sample_CERRA - self.data_mean_CERRA[:, None, None]) / self.data_std_CERRA[:, None, None]
-                sample_era5 = (sample_era5 - self.data_mean_era5[:, None, None]) / self.data_std_era5[:, None, None]
-                     
-                    
-            if self.split == "test":
-                mean_CERRA = self.data_mean_CERRA[:, None, None]
-                std_CERRA = self.data_std_CERRA[:, None, None]
-                mean_era5 = self.data_mean_era5[:, None, None]
-                std_era5 = self.data_std_era5[:, None, None]
-                diz_stats = {
-                    "mean_CERRA": mean_CERRA,
-                    "std_CERRA": std_CERRA,
-                    "mean_era5": mean_era5,
-                    "std_era5": std_era5
-                }
-                #return also the names of the samples
-                
-                return  sample_era5, sample_CERRA ,diz_stats, sample_name_CERRA
-            
-            else:
-                return  sample_era5, sample_CERRA
-        
-        elif self.mode == "CERRA_only":
-            sample_name_CERRA = self.sample_names_CERRA[idx]
-            sample_path_CERRA = os.path.join(self.sample_dir_path_CERRA, f"nwp_{sample_name_CERRA}.npy")
-            try:
-                sample_CERRA = torch.tensor(np.load(sample_path_CERRA), dtype=torch.float32)
-            except ValueError:
-                print(f"Failed to load {sample_path_CERRA}")
-            sample_CERRA = sample_CERRA.flatten(0, 1)
-            if self.standardize:
-                sample_CERRA = (sample_CERRA - self.data_mean_CERRA) / self.data_std_CERRA
-            return sample_CERRA
-        
-        else:  # ERA5_only
-            sample_name_era5 = self.sample_names_era5[idx]
-            sample_path_era5 = os.path.join(self.sample_dir_path_era5, f"nwp_{sample_name_era5}.npy")
-            try:
-                sample_era5 = torch.tensor(np.load(sample_path_era5), dtype=torch.float32)
-            except ValueError:
-                print(f"Failed to load {sample_path_era5}")
-            sample_era5 = sample_era5.flatten(0, 1)
-            if self.standardize:
-                sample_era5 = (sample_era5 - self.data_mean_era5) / self.data_std_era5
-            return sample_era5
-        
-        
-    def upsample(self, lr_tensor, hr_tensor):
-        """
-        Upsample the input tensor to match the target tensor's spatial dimensions.
-        """
-        # 1) add batch dim
-        era5_batched = lr_tensor.unsqueeze(0)                # [1, C, H_old, W_old]
-
-        # 2) pick the target spatial size from sample_CERRA
-        target_size = hr_tensor.shape[-2:]                  # (H_new, W_new)
-
-        # 3) interpolate
-        upsampled = F.interpolate(
-            era5_batched,
-            size=target_size,
-            # mode='bicubic',
-            mode='bilinear',
-            align_corners=False
-        )                                                      # [1, C, H_new, W_new]
-
-        # 4) drop the batch dim
-        return upsampled.squeeze(0)                      # [C, H_new, W_new]
-        
 class CerraEra5SuperResDataset(ERA5toCERRA2):
-    pass
+    """Backward-compatible alias for the single-frame dataset."""

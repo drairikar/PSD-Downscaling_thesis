@@ -12,6 +12,7 @@ import os
 import numpy as np
 from scipy.fft import fft
 import math
+import torch.nn.functional as F
 
 from .losses.fourier_losses import FourierLossETH, FourierLossDelft, FourierLossHK, FourierLossCarlo
 
@@ -30,6 +31,11 @@ class UNetWrapper(pl.LightningModule):
             self.img_shape_y = args.img_resolution[0]
             self.img_shape_x = args.img_resolution[1]
 
+        # SongUNet downsamples repeatedly. Pad internally to a safe multiple
+        # and crop the prediction back to the dataset resolution afterwards.
+        self.model_shape_y = math.ceil(self.img_shape_y / 32) * 32
+        self.model_shape_x = math.ceil(self.img_shape_x / 32) * 32
+
         self.img_in_channels = args.img_in_channels
         self.img_out_channels = args.img_out_channels
         self.lr = args.lr
@@ -39,7 +45,6 @@ class UNetWrapper(pl.LightningModule):
         
         self.model_kwargs = {
             'checkpoint_level': args.checkpoint_level,
-            'N_grid_channels': args.N_grid_channels,
             'embedding_type': args.embedding_type,
             'model_channels': args.model_channels,
             'channel_mult': args.channel_mult,
@@ -47,9 +52,17 @@ class UNetWrapper(pl.LightningModule):
         }
 
         model_class = getattr(network_module, args.model_type)
+        positional_models = {"SongUNetPosEmbd", "SongUNetPosLtEmbd"}
+        uses_grid_channels = args.model_type in positional_models
+        grid_channels = int(args.N_grid_channels) if uses_grid_channels else 0
+        if uses_grid_channels:
+            self.model_kwargs["N_grid_channels"] = grid_channels
+
         self.model = model_class(
-            img_resolution=args.img_resolution,
-            in_channels=args.img_in_channels + args.N_grid_channels + args.img_out_channels,
+            img_resolution=[self.model_shape_y, self.model_shape_x],
+            in_channels=(
+                args.img_in_channels + grid_channels + args.img_out_channels
+            ),
             out_channels=args.img_out_channels,
             **self.model_kwargs,
         )
@@ -101,8 +114,6 @@ class UNetWrapper(pl.LightningModule):
         ValueError
             If the model output dtype doesn't match the expected dtype.
         """
-        print(f"x.shape: {x.shape}, img_lr.shape: {img_lr.shape}")
-        
         expected_hw = (self.img_shape_y, self.img_shape_x)
         
         if img_lr is not None and img_lr.shape[-2:] != expected_hw:
@@ -121,12 +132,20 @@ class UNetWrapper(pl.LightningModule):
         if img_lr is not None:
             x = torch.cat((x, img_lr), dim=1)
 
+        height, width = x.shape[-2:]
+        pad_h = self.model_shape_y - height
+        pad_w = self.model_shape_x - width
+        if pad_h or pad_w:
+            x = F.pad(x, (0, pad_w, 0, pad_h), mode="reflect")
+
         F_x = self.model(
             x,  # (c_in * x).to(dtype),
             torch.zeros(x.shape[0], device=x.device),  # c_noise.flatten()
             class_labels=None,
             **model_kwargs,
         )
+
+        F_x = F_x[..., :height, :width]
 
         # skip connection
         D_x = F_x.to(torch.float32)
@@ -247,7 +266,12 @@ class UNetWrapper(pl.LightningModule):
         ssim_all  = ssim_func(predictions, ground_truth, data_range=data_range)
 
         # (5) Compute per‐variable metrics. Here var_names must match the channel order.
-        var_names = ['u10', 'v10', 't2m', 'sshf', 'zust']
+        var_names = ["u10", "v10", "t2m"]
+        if predictions.shape[1] != len(var_names):
+            raise ValueError(
+                f"Expected {len(var_names)} output channels for {var_names}, "
+                f"got {predictions.shape[1]}."
+            )
         # mse_vars  = {}
         # mae_vars  = {}
         # rmse_vars = {}
@@ -585,7 +609,5 @@ class RegressionLoss:
             loss = torch.mean((D_yn - y) ** 2)
             loss_space = loss #MSE
             loss_amp = torch.tensor(0.0, device=D_yn.device) #just zero
-            
 
         return loss, y, D_yn, loss_space, loss_amp #, lambda_psd, lambda_psd * psd_loss
-    

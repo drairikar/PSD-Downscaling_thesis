@@ -82,6 +82,7 @@ SEQUENCE_MODELS = {"UNet-Seq"}
 SEQUENCE_ONLY_ARGS = {
     "region",
     "sequence_length",
+    "local_window",
     "cadence",
     "train_sequence_stride",
     "sequence_stride",
@@ -121,6 +122,7 @@ def make_dataset(config, args, split):
             "cadence": getattr(
                 args, "cadence", 3
             ),
+            # "local_window": getattr(args, "local_window", 3),
             "flatten": getattr(args, "flatten_sequence", True),
 
             "n_samples": (
@@ -140,13 +142,17 @@ def make_dataset(config, args, split):
         return CerraPriorDatasetSequence(**dataset_kwargs)
 
     return ERA5toCERRA2(
-        config.dataset.cerra_path,
-        config.dataset.era5_path,
-        split = split,
-        subset = bool(
+        dataset_name_CERRA=config.dataset.cerra_path,
+        dataset_name_ERA5=config.dataset.era5_path,
+        split=split,
+        standardize=config.dataset.standardize,
+        subset=bool(config.dataset.subset_size),
+        region=getattr(config.dataset, "region", "CentralEurope"),
+        n_samples=(
             config.dataset.subset_size
+            if config.dataset.subset_size
+            else None
         ),
-
     )
 
 def create_model_args(config, args):
