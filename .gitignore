@@ -95,7 +95,9 @@ sbatch/multisource.sh
 .gitignore
 *.npz
 *.pt
-
+*.npy
+*.pdf
+*.sh
 
 
 

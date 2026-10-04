@@ -25,16 +25,16 @@ import xarray as xr
 # Configuration
 # -----------------------------------------------------------------------------
 PRIMARY_VARS = ("u10", "v10", "t2m")
-DERIVED_VARS = ("vorticity", "divergence", "kinetic_energy")
+DERIVED_VARS = ("divergence", "vorticity", "kinetic_energy")
 CHANNEL_MAP = {name: index for index, name in enumerate(PRIMARY_VARS)}
 
-VARIABLE_TITLES = {
-    "u10": "$u_{10}$",
-    "v10": "$v_{10}$",
-    "t2m": "$T_{2m}$)",
-    "vorticity": "Vorticity",
-    "divergence": "Divergence",
-    "kinetic_energy": "Kinetic energy",
+PANEL_CAPTIONS = {
+    "u10": r"(a) PSD of $u_{10}$",
+    "v10": r"(b) PSD of $v_{10}$",
+    "t2m": r"(c) PSD of temperature $T_{2m}$",
+    "divergence": r"(d) PSD of divergence $\delta_h$",
+    "vorticity": r"(e) PSD of vorticity $\zeta_h$",
+    "kinetic_energy": r"(f) PSD of kinetic energy $E_h$",
 }
 
 CERRA_PATH = pathlib.Path(
@@ -66,10 +66,10 @@ OUT_DIR = pathlib.Path("plot_tests_thesis")
 BATCH_SIZE = 32
 
 SERIES_STYLE = {
-    "CERRA": {"color": "#1f1f1f", "linestyle": "-", "linewidth": 2.4},
-    "U-Net": {"color": "#0072B2", "linestyle": "-", "linewidth": 1.8},
-    "FNO": {"color": "#D55E00", "linestyle": "--", "linewidth": 1.8},
-    "U-NO": {"color": "#CC79A7", "linestyle": "-.", "linewidth": 1.8},
+    "CERRA": {"color": "#1f1f1f", "linestyle": "-", "linewidth": 1.7},
+    "U-Net": {"color": "#0072B2", "linestyle": "-", "linewidth": 1.25},
+    "FNO": {"color": "#D55E00", "linestyle": "-", "linewidth": 1.25},
+    "U-NO": {"color": "#CC79A7", "linestyle": "-", "linewidth": 1.25},
 }
 
 
@@ -175,15 +175,11 @@ def extract_var(stack: np.ndarray, variable: str) -> np.ndarray:
 
     u10 = stack[..., CHANNEL_MAP["u10"]]
     v10 = stack[..., CHANNEL_MAP["v10"]]
-    du_dx = np.gradient(u10, axis=2)
-    du_dy = np.gradient(u10, axis=1)
-    dv_dx = np.gradient(v10, axis=2)
-    dv_dy = np.gradient(v10, axis=1)
 
     if variable == "vorticity":
-        return dv_dx - du_dy
+        return np.gradient(v10, axis=2) - np.gradient(u10, axis=1)
     if variable == "divergence":
-        return du_dx + dv_dy
+        return np.gradient(u10, axis=2) + np.gradient(v10, axis=1)
     if variable == "kinetic_energy":
         return 0.5 * (u10**2 + v10**2)
     raise KeyError(f"Unknown variable: {variable}")
@@ -281,25 +277,26 @@ def save_psd_csv(
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
-def plot_psd_group(
+def plot_psd_grid(
     variables: Iterable[str],
     all_curves: Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray]]],
     output_stem: str,
 ) -> Tuple[pathlib.Path, pathlib.Path]:
-    """Plot three variables as aligned small multiples with one legend."""
+    """Plot six PSDs as a thesis-width 2 x 3 panel with one legend."""
     variables = tuple(variables)
-    if len(variables) != 3:
-        raise ValueError("A 1 x 3 PSD figure requires exactly three variables.")
+    if len(variables) != 6:
+        raise ValueError("A 2 x 3 PSD figure requires exactly six variables.")
 
-    fig, axes = plt.subplots(1, 3, figsize=(15.2, 4.4), sharex=True)
+    # Match a typical thesis text width so LaTeX does not shrink the labels.
+    fig, axes = plt.subplots(2, 3, figsize=(7.0, 4.8), sharex=True)
     legend_handles = []
     legend_labels = []
 
-    for panel_index, (axis, variable) in enumerate(zip(axes, variables)):
+    for panel_index, (axis, variable) in enumerate(zip(axes.flat, variables)):
         for label, (wavenumber, psd) in all_curves[variable].items():
             # The zero-frequency/DC component cannot be displayed on a log axis.
             positive = wavenumber > 0
-            style = SERIES_STYLE.get(label, {"linewidth": 1.8})
+            style = SERIES_STYLE.get(label, {"linewidth": 1.1})
             (line,) = axis.loglog(
                 wavenumber[positive], psd[positive], label=label, **style
             )
@@ -307,27 +304,59 @@ def plot_psd_group(
                 legend_handles.append(line)
                 legend_labels.append(label)
 
-        axis.set_title(VARIABLE_TITLES[variable], fontsize=11, pad=8)
-        axis.set_xlabel(r"Wavenumber $k$ (cycles degree$^{-1}$)")
-        axis.grid(True, which="major", color="#d9d9d9", linewidth=0.7)
-        axis.grid(True, which="minor", color="#eeeeee", linewidth=0.45)
-        axis.tick_params(labelsize=9)
+        axis.set_xlabel(
+            r"Wavenumber $k$ (cycles deg$^{-1}$)", fontsize=8, labelpad=1
+        )
+        axis.set_ylabel("PSD", fontsize=8, labelpad=2)
+        axis.grid(True, which="major", color="#d9d9d9", linewidth=0.5)
+        axis.grid(True, which="minor", color="#eeeeee", linewidth=0.3)
+        axis.tick_params(axis="both", which="major", labelsize=7.5, pad=1.5)
+        axis.tick_params(axis="both", which="minor", labelsize=6.5)
+        axis.text(
+            0.5,
+            -0.34,
+            PANEL_CAPTIONS[variable],
+            transform=axis.transAxes,
+            ha="center",
+            va="top",
+            fontsize=8.5,
+        )
 
-    axes[0].set_ylabel("Power spectral density")
     fig.legend(
         legend_handles,
         legend_labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 1.02),
+        bbox_to_anchor=(0.5, 0.995),
         ncol=len(legend_labels),
         frameon=False,
+        fontsize=8,
+        handlelength=2.0,
+        columnspacing=1.3,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.91), w_pad=2.0)
+    fig.subplots_adjust(
+        left=0.085,
+        right=0.99,
+        top=0.89,
+        bottom=0.105,
+        wspace=0.32,
+        hspace=0.78,
+    )
 
     png_path = OUT_DIR / f"{output_stem}.png"
     pdf_path = OUT_DIR / f"{output_stem}.pdf"
-    fig.savefig(png_path, dpi=300, bbox_inches="tight", facecolor="white")
-    fig.savefig(pdf_path, bbox_inches="tight", facecolor="white")
+    fig.savefig(
+        png_path,
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.03,
+        facecolor="white",
+    )
+    fig.savefig(
+        pdf_path,
+        bbox_inches="tight",
+        pad_inches=0.03,
+        facecolor="white",
+    )
     plt.close(fig)
     return png_path, pdf_path
 
@@ -337,7 +366,7 @@ def main() -> None:
     plt.rcParams.update(
         {
             "font.family": "serif",
-            "font.size": 10,
+            "font.size": 8.5,
             "axes.edgecolor": "#444444",
             "axes.linewidth": 0.8,
         }
@@ -381,27 +410,10 @@ def main() -> None:
         csv_path = save_psd_csv(variable, curves)
         print(f"Saved {csv_path}")
 
-    primary_paths = plot_psd_group(
-        PRIMARY_VARS, all_curves, "primary_variables_psd"
+    figure_paths = plot_psd_grid(
+        (*PRIMARY_VARS, *DERIVED_VARS), all_curves, "all_variables_psd"
     )
-    derived_paths = plot_psd_group(
-        DERIVED_VARS, all_curves, "derived_variables_psd"
-    )
-    print(f"Saved {primary_paths[0]} and {primary_paths[1]}")
-    print(f"Saved {derived_paths[0]} and {derived_paths[1]}")
-    save_psd_csv(variable, curves)
-
-    primary_paths = plot_psd_group(
-        PRIMARY_VARS, all_curves, "primary_variables_psd"
-    )
-    derived_paths = plot_psd_group(
-        DERIVED_VARS, all_curves, "derived_variables_psd"
-    )
-
-    print("Saved:")
-    for path in (*primary_paths, *derived_paths):
-        print(f"  {path.resolve()}")
-    print(f"Per-variable CSV tables are in {OUT_DIR.resolve()}")
+    print(f"Saved {figure_paths[0]} and {figure_paths[1]}")
 
 
 if __name__ == "__main__":

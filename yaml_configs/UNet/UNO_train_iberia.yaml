@@ -3,16 +3,16 @@
 # =========================
 dataset_cerra: "/projects/0/prjs0951/Carlo/zz_processed_data_new/CERRA"
 dataset_era5: "/projects/0/prjs0951/Carlo/zz_processed_data_new/ERA5"
-model: FNO                 # Model architecture
+model: UNO                 # Model architecture
 subset_ds: 0                   # 0 = full dataset, >0 = subset size
 seed: 32
-n_workers: 16                    # Dataloader workers
-load: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-testv2-FNO-09_10_10-6674/min_val_loss.ckpt"
+n_workers: 16                   # Dataloader workers
+load: null
 restore_opt: 0                    # 0 = do not restore optimizer
-precision: "16-mixed"              # 32 | 16 | 16-mixed | bf16
-eval: test                   # val | test | null → train
-wandb_project: finetune
-run_name: FNO-test     # Optional run name
+precision: "32"              # 32 | 16 | 16-mixed | bf16
+eval: null                    # val | test | null → train
+wandb_project: UNO_run
+run_name: UNO_iberia    # Optional run name
 # =========================
 # DATASET SETTINGS
 # =========================
@@ -20,26 +20,33 @@ output_variables: null             # List of vars to predict
 img_in_channels: 4                 # ERA5 u10/v10/t2m + CERRA orography
 img_out_channels: 3                # CERRA u10/v10/t2m
 img_resolution: [350, 350]
-region: CentralEurope
+region: Iberia
 # =========================
 # MODEL SETTINGS
 # =========================
 
-num_fno_layers: 2
-fno_layer_size: 64
-num_fno_modes: 16
-fno_padding: 8
-coord_features: True
-decoder_layers: 1
-decoder_layer_size: 64
+n_layers: 5
+# Reduced channel capacity to limit the overfitting seen after roughly epoch 40.
+hidden_channels: 64
+projection_channels: 128
+lifting_channels: 128
+positional_embedding: 'grid'  # 'grid' | 'fourier' | 'none'
+uno_out_channels: [32, 64, 128, 64, 32]
+# uno_n_modes: [[48,48],[24,24],[12,12],[24,24],[48,48]]
+uno_n_modes: [[32, 32], [24, 24], [16, 16], [24, 24], [32, 32]]
+# uno_n_modes: [[16, 16], [12, 12], [12, 12], [16, 16], [20, 20]]
+uno_scalings: [[1.0, 1.0], [0.5, 0.5], [0.5, 0.5], [2.0, 2.0], [2.0, 2.0]]
+horizontal_skips_map: {4:0, 3:1}
+channel_mlp_skip: 'linear'  # 'linear' | 'soft-gating' | 'identity'
 
 # =========================
 # TRAINING SETTINGS
 # =========================
 val_interval: 1
 lr: 2.0e-4
+# lr: 1.0e-6
 epochs: 200
-batch_size: 8
+batch_size: 16
 lr_decay: 1
 lr_rampup: 0
 grad_clip_threshold: null          # Set a number to enable clipping
@@ -48,4 +55,4 @@ init_lambda: 0.0
 max_lambda: 0.0001
 loss_type: 'Fourier_Carlo'
 resume: null
-savepreds_path: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/inference_outputs"
+savepreds_path: null

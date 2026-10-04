@@ -7,12 +7,12 @@ model: FNO                 # Model architecture
 subset_ds: 0                   # 0 = full dataset, >0 = subset size
 seed: 32
 n_workers: 16                    # Dataloader workers
-load: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-testv2-FNO-09_10_10-6674/min_val_loss.ckpt"
+load: null
 restore_opt: 0                    # 0 = do not restore optimizer
 precision: "16-mixed"              # 32 | 16 | 16-mixed | bf16
-eval: test                   # val | test | null → train
+eval: null                   # val | test | null → train
 wandb_project: finetune
-run_name: FNO-test     # Optional run name
+run_name: FNO-Iberia     # Optional run name
 # =========================
 # DATASET SETTINGS
 # =========================
@@ -20,7 +20,7 @@ output_variables: null             # List of vars to predict
 img_in_channels: 4                 # ERA5 u10/v10/t2m + CERRA orography
 img_out_channels: 3                # CERRA u10/v10/t2m
 img_resolution: [350, 350]
-region: CentralEurope
+region: Iberia
 # =========================
 # MODEL SETTINGS
 # =========================
@@ -48,4 +48,4 @@ init_lambda: 0.0
 max_lambda: 0.0001
 loss_type: 'Fourier_Carlo'
 resume: null
-savepreds_path: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/inference_outputs"
+savepreds_path: null
