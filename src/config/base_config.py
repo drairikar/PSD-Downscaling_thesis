@@ -22,6 +22,7 @@ class ModelType(Enum):
     UNO = "UNO"
     DSFNO = "DSFNO"
     AFNO = "AFNO"
+    BICUBIC = "Bicubic"
 
 class PrecisionType(Enum):
     """Supported precision types."""
@@ -264,8 +265,14 @@ class AFNOModelConfig(BaseModelConfig):
             raise ValueError("afno_depth must be positive")    
 
 
+@dataclass
+class BicubicModelConfig(BaseModelConfig):
+    """Parameter-free baseline using the dataset's bicubic ERA5 fields."""
+    model_type: str = "Bicubic"
+
+
 # Type alias for model configs
-ModelConfig = Union[FNOModelConfig, UNetModelConfig, DiffusionModelConfig, UNOModelConfig, YangModelConfig, AFNOModelConfig]
+ModelConfig = Union[FNOModelConfig, UNetModelConfig, DiffusionModelConfig, UNOModelConfig, YangModelConfig, AFNOModelConfig, BicubicModelConfig]
 
 
 def create_model_config(config_dict: Dict[str, Any]) -> ModelConfig:
@@ -280,6 +287,7 @@ def create_model_config(config_dict: Dict[str, Any]) -> ModelConfig:
         'UNO': UNOModelConfig,
         'DSFNO': YangModelConfig,
         'AFNO': AFNOModelConfig,
+        'Bicubic': BicubicModelConfig,
     }
     
     if model_type not in config_classes:
@@ -429,6 +437,13 @@ class ExperimentConfig:
     def _validate(self):
         if self.eval is not None and self.eval not in ["val", "test"]:
             raise ValueError("eval must be 'val', 'test', or None")
+        if self.model.model_type == "Bicubic":
+            if self.eval != "test":
+                raise ValueError("Bicubic is an evaluation-only baseline; set eval: test.")
+            if self.load or self.resume or self.restore_opt:
+                raise ValueError("Bicubic has no checkpoint or optimizer state to load.")
+            if (self.dataset.img_in_channels, self.dataset.img_out_channels) != (4, 3):
+                raise ValueError("Bicubic expects 4 input channels and 3 output channels (u10, v10, t2m).")
         if self.load and not Path(self.load).exists():
             raise ValueError(f"Checkpoint path does not exist: {self.load}")
         if self.save_preds_path:

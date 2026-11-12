@@ -1,171 +1,183 @@
-# PSD-Downscaling
+# PSD-Downscaling thesis
 
-This repository contains the official implementation of the paper **"Assessing the Geographic Generalization and Physical Consistency of Generative Models for Climate Downscaling"**, accepted at the AI for Science workshop at NeurIPS 2025.
+ERA5-to-CERRA weather downscaling with U-Net, FNO, U-NO, a local sequence
+U-Net, and bicubic interpolation. The target variables are `u10`, `v10`, and
+`t2m`. Spectral analyses also examine vorticity, divergence, and kinetic energy.
 
-## Overview
+## Repository structure
 
-This codebase implements multiple deep learning approaches for statistical downscaling of meteorological data, with a focus on preserving Power Spectral Density (PSD) characteristics. The models are designed to downscale low-resolution ERA5 data to high-resolution CERRA data while maintaining physically meaningful spatial patterns.
-
-### Implemented Methods
-
-1. **UNet-CNN (Regression)**: A deterministic U-Net-based model for direct regression from low-resolution to high-resolution fields. This is the deterministic component of CorrDiff.
-3. **CRPS U-Net**: The same U-Net architecture but trained with Continuous Ranked Probability Score (CRPS) loss to make it probabilistic. 
-2. **CorrDiff (Diffusion)**: A conditional diffusion model that generates probabilistic downscaled predictions conditioned on the regression model output (UNet-CNN).
-
-## Repository Structure
-
-```
-PSD-Downscaling/
-├── main.py                 # Main training/evaluation script
-├── metrics.py              # Evaluation metrics
-├── requirements.txt        # Python dependencies
-├── yaml_configs/          # Configuration files
-│   ├── UNet/             # UNet regression configs
-│   ├── CorrDiff/         # Diffusion model configs
-│   └── CRPS/             # CRPS-based UNet configs
+```text
+.
+├── main.py                           # Training and evaluation
+├── generate_monthly_deterministic.py  # Independent U-Net/FNO/U-NO trajectories
+├── generate_monthly_unet_seq.py       # Local sequence U-Net trajectories
+├── metrics.py                        # Legacy saved-array metrics
 ├── src/
-│   ├── config/           # Configuration system
-│   ├── data/             # Dataset implementations
-│   │   └── dataset.py    # ERA5-CERRA tiled dataset
-│   ├── models/           # Model architectures
-│   │   ├── unet.py       # U-Net implementation
-│   │   ├── diffusion.py  # Diffusion model
-│   │   └── losses/       # Custom loss functions
-│   ├── training/         # Training utilities
-│   └── utils/            # Utility functions
-└── saved_models/         # Model checkpoints (created during training)
+│   ├── config/                       # Configuration validation and adapters
+│   ├── data/                         # Regional NetCDF datasets
+│   ├── models/                       # Model wrappers and Fourier losses
+│   └── utils/                        # Metrics, plotting, and shared functions
+├── yaml_configs/                     # Model and experiment configurations
+├── sbatch/                           # Cluster launch scripts
+├── tests/                            # Dataset and bicubic regression tests
+├── physicsnemo/                      # Bundled model implementation
+└── saved_models/                     # Local model checkpoints
 ```
 
-## Installation
+## Requirements
 
-### Requirements
+The reference environment uses Python **3.13.0**, Torch **2.10.0**, PyTorch
+Lightning **2.6.1**, and NeuralOperator **2.0.0**. Training and full-resolution
+model evaluation should use a compatible NVIDIA GPU; the tests and bicubic
+baseline support CPU execution.
 
-- Python 3.8+
-- PyTorch (with CUDA support recommended)
-- PyTorch Lightning 2.0+
+[`requirements.txt`](requirements.txt) contains older dependency pins and needs
+reconciliation before a fresh installation. Additional direct dependencies
+include `cartopy`, `h5netcdf`, `nvtx`, and `tueplots`; tests require `pytest`.
+A fresh installation has not been validated against that manifest.
 
-### Setup
+Run commands from the repository root to use the bundled `physicsnemo/` code.
+For the existing project environment:
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/[username]/PSD-Downscaling.git
-cd PSD-Downscaling
+conda activate devashish
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+## Models and configurations
+
+| Model | Key | Configurations |
+| --- | --- | --- |
+| U-Net | `UNet-CNN` | [`UNet_train.yaml`](yaml_configs/UNet/UNet_train.yaml) |
+| FNO | `FNO` | [`FNO_train.yaml`](yaml_configs/UNet/FNO_train.yaml), [`FNO_train_Iberia.yaml`](yaml_configs/UNet/FNO_train_Iberia.yaml) |
+| U-NO | `UNO` | [`UNO_train.yaml`](yaml_configs/UNet/UNO_train.yaml), [`UNO_train_iberia.yaml`](yaml_configs/UNet/UNO_train_iberia.yaml) |
+| Local sequence U-Net | `UNet-Seq` | [`UNet_seq_train.yaml`](yaml_configs/UNet/UNet_seq_train.yaml), [`UNet_seq_test.yaml`](yaml_configs/UNet/UNet_seq_test.yaml) |
+| Bicubic | `Bicubic` | [`Bicubic_test.yaml`](yaml_configs/Baselines/Bicubic_test.yaml) |
+| FNO at 175 × 175 | `FNO` | [`FNO_train_175.yaml`](yaml_configs/UNet/FNO_train_175.yaml), [`FNO_test_175.yaml`](yaml_configs/UNet/FNO_test_175.yaml) |
+
+Several files named `_train.yaml` currently set `eval: test`. Check `model`,
+`eval`, `region`, `load`, and `img_resolution` before running a configuration.
+The current `UNet_train.yaml` selects Iberia. Additional diffusion, AFNO, and
+DSFNO wrappers remain in the codebase; the AFNO/DSFNO example checkpoints are
+not present locally.
 
 ## Data
 
-The models are trained on ERA5 (low-resolution) and CERRA (high-resolution) meteorological reanalysis data.
+Set `dataset_cerra` and `dataset_era5` in the YAML to processed-data roots with:
 
-**Data preprocessing and download instructions**: A separate repository with detailed instructions for downloading and preprocessing the ERA5 and CERRA datasets will be shared soon. Please check back or contact the authors for access.
+```text
+CERRA/<split>/<Region>.nc
+CERRA/<split>/static_<Region>.nc
+ERA5/<split>/<Region>.nc
+ERA5/statistics/dynamic_mean.npy
+ERA5/statistics/dynamic_std.npy
+ERA5/statistics/forcing_mean.npy
+ERA5/statistics/forcing_std.npy
+```
 
-## Usage
+`<split>` is `train`, `val`, or `test`. ERA5/CERRA timestamps must match and
+cover aligned regional domains. Dynamic statistics follow
+`[u10, v10, t2m, sshf, zust, sp]`; both datasets use the selected ERA5 statistics.
 
-### Training
+Single-frame inputs contain bicubically resized ERA5 `u10`, `v10`, and `t2m`,
+plus CERRA orography. Current native regional grids are 350 × 350. Setting
+`img_resolution: [175, 175]` in `main.py` applies full-region 2 × 2 block
+averaging. Sequence datasets require consecutive three-hour samples.
 
-To train a model, run `main.py` with a configuration file:
+## Training and evaluation
+
+Edit the chosen YAML for your data paths, model, region, resolution, and run
+settings. YAML values override matching CLI arguments; `main.py` has no
+`--override` option.
+
+For training, set `eval: null`, `load: null`, and `resume: null`:
 
 ```bash
-python main.py --config yaml_configs/[model_type]/[config_file].yaml
+WANDB_MODE=offline python main.py --config yaml_configs/UNet/UNet_seq_train.yaml
 ```
 
-#### Training Examples
-
-**Train UNet-CNN (Regression Model):**
-```bash
-python main.py --config yaml_configs/UNet/UNet_train.yaml
-```
-
-**Train CorrDiff (Diffusion Model):**
-```bash
-python main.py --config yaml_configs/CorrDiff/CorrDiff_train.yaml
-```
-
-**Train CRPS U-Net:**
-```bash
-python main.py --config yaml_configs/CRPS/CRPS_train.yaml
-```
-
-### Evaluation
-
-To evaluate a trained model on the test set:
+For evaluation, set `eval: test` and `load` to a matching checkpoint:
 
 ```bash
-python main.py --config yaml_configs/[model_type]/[config_file]_test.yaml
+WANDB_MODE=offline python main.py --config yaml_configs/UNet/UNet_seq_test.yaml
 ```
 
-**Example:**
+`WANDB_MODE=offline` stores W&B logs locally. Checkpoints are saved under
+`saved_models/<run>/`: `min_val_loss.ckpt` is the best validation checkpoint,
+and `last.ckpt` stores the latest training state. Use `resume` to continue
+training with trainer state. Setting `wandb_project: null` selects a fallback
+logger; learned models require a TensorBoard backend for that option.
+
+### Bicubic baseline
+
 ```bash
-python main.py --config yaml_configs/UNet/UNet_test.yaml
+python main.py --config yaml_configs/Baselines/Bicubic_test.yaml
 ```
 
-### Configuration
+Bicubic evaluation requires no checkpoint or training. It uses the three ERA5
+fields without orography and reports physical-unit MSE, MAE, RMSE, and SSIM.
+Set the region and resolution in the YAML; only `eval: test` is supported.
 
-All hyperparameters are specified in YAML configuration files located in the `yaml_configs/` directory. Key parameters include:
+Bicubic RMSE is calculated from full-dataset MSE and SSIM is averaged per image.
+Learned wrappers currently use batch-averaged RMSE and batch SSIM ranges, so
+account for these aggregation differences when comparing logged metrics.
 
-- **Dataset paths**: `dataset_cerra`, `dataset_era5`
-- **Model architecture**: `model_type`, `model_channels`, `channel_mult`, `attn_resolutions`
-- **Training settings**: `lr`, `epochs`, `batch_size`, `precision`
-- **Evaluation**: Set `eval: "test"` or `eval: "val"` for evaluation mode
+## Monthly trajectories
 
-Example configuration snippet:
-```yaml
-# General options
-model: UNet-CNN
-seed: 42
-precision: "16-mixed"
-wandb_project: MyProject
+- [`generate_monthly_deterministic.py`](generate_monthly_deterministic.py)
+  evaluates independent U-Net, FNO, or U-NO frames.
+- [`generate_monthly_unet_seq.py`](generate_monthly_unet_seq.py) produces a
+  continuous trajectory with the local sequence U-Net.
 
-# Model settings
-model_channels: 64
-channel_mult: [1, 2, 2]
-attn_resolutions: [16]
-
-# Training settings
-lr: 2.0e-4
-epochs: 200
-batch_size: 8
-```
-
-## Branch Information
-
-This repository has two main branches:
-
-- **`CNN-UNet`**: For training and evaluating the regression U-Net and CorrDiff models
-- **`CRPS`**: For training and evaluating the probabilistic U-Net with CRPS loss
-
-Switch to the appropriate branch depending on which model you want to work with:
 ```bash
-git checkout CNN-UNet      # For UNet and CorrDiff
-git checkout CRPS          # For CRPS-based probabilistic UNet
+python generate_monthly_deterministic.py --help
+python generate_monthly_unet_seq.py --help
 ```
 
-## Model Checkpoints
+Both scripts require a config, matching checkpoint, region, start/end times,
+and destination path. `--start` is inclusive and `--end` is exclusive. They
+save physical-unit `pred_seq`, `hr_seq`, and `lr_seq` tensors with
+`[1, T, 3, H, W]` layout, timestamps, and temporal metrics. The monthly
+scripts currently use native-grid datasets; use `main.py` for resolution
+experiments. These trajectories supply baselines for the sibling GeoDiff
+repository's temporal comparisons.
 
-Trained model checkpoints are saved in the `saved_models/` directory. Each training run creates a timestamped subdirectory containing:
-- `last.ckpt`: Most recent checkpoint
-- `min_val_loss.ckpt`: Best model based on validation loss
+## Analysis
 
-To resume training or run evaluation, specify the checkpoint path in your config file:
-```yaml
-load: "saved_models/[run_name]/min_val_loss.ckpt"
+[`src/utils/psd_plot.py`](src/utils/psd_plot.py) calculates longitudinal spatial
+PSDs for the three primary and three derived variables. Set `CERRA_PATH`,
+`ERA5_PATH`, `MODEL_PATHS`, and `OUT_DIR` in the script, then run:
+
+```bash
+python src/utils/psd_plot.py
 ```
 
-## Logging
+The calculation uses a one-dimensional FFT along longitude, averaging over
+samples and latitude. It exports primary/derived three-panel figures and
+per-variable CSV spectra. Derived gradients use grid-index spacing.
 
-The codebase supports logging with Weights & Biases:
+All selected predictions must match the reference sample count and spatial
+shape. The current `FNO_175` entry has a different resolution from the native
+reference: exclude it for a 350 × 350 comparison, or prepare matched references
+for a separate resolution comparison.
 
-1. **Weights & Biases (W&B)**: Set `wandb_project` in your config file
+Sequence-model test hooks export spatial PSD arrays and plots.
+[`metrics.py`](metrics.py) contains older saved-array metrics; review its
+channel/layout assumptions and CLI before reuse.
 
+## Tests and reproducibility
 
-## Contact
+```bash
+CUDA_VISIBLE_DEVICES='' MPLBACKEND=Agg python -m pytest -q tests
+```
 
-For questions or issues, please:
-- Open an issue on GitHub
-- Contact: c.saccardi@tudelft.nl
+The 27 CPU test cases cover full-region resolution changes, normalization,
+bicubic predictions, metric aggregation, and baseline configuration validation:
 
+- [`test_dataset_resolution.py`](tests/test_dataset_resolution.py)
+- [`test_bicubic.py`](tests/test_bicubic.py)
 
+For each thesis or paper result, record the exact command, YAML, code revision,
+checkpoint, data/statistics version, region, split, resolution, and environment.
+The tests use synthetic data. Seeded runs use `deterministic=False`, so seeds
+alone do not guarantee identical training results.

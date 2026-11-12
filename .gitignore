@@ -98,6 +98,11 @@ sbatch/multisource.sh
 *.npy
 *.pdf
 *.sh
+*.nc
+*.gif
+*.md
+*.json
+
 
 
 

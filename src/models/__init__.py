@@ -11,5 +11,6 @@ from .UNO import UNOWrapper
 from .Yang import DSFNOWrapper
 from .afno import AFNOWrapper
 from .unet_seq import UNetSequenceWrapper
+from .bicubic import BicubicWrapper
 
-__all__ = ['UNetWrapper', 'DiffusionWrapper', 'FNOWrapper', 'UNOWrapper', 'DSFNOWrapper', 'AFNOWrapper', 'UNetSequenceWrapper']
+__all__ = ['UNetWrapper', 'DiffusionWrapper', 'FNOWrapper', 'UNOWrapper', 'DSFNOWrapper', 'AFNOWrapper', 'UNetSequenceWrapper', 'BicubicWrapper']

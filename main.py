@@ -17,6 +17,7 @@ from src.models.UNO import UNOWrapper
 from src.models.Yang import DSFNOWrapper
 from src.models.afno import AFNOWrapper
 from src.models.unet_seq import UNetSequenceWrapper
+from src.models.bicubic import BicubicWrapper
 from src.data import ERA5toCERRA2, CerraPriorDatasetSequence
 import os
 import tempfile
@@ -75,6 +76,7 @@ MODELS = {
     "DSFNO": DSFNOWrapper,
     "AFNO": AFNOWrapper,
     "UNet-Seq": UNetSequenceWrapper,
+    "Bicubic": BicubicWrapper,
 }
 
 SEQUENCE_MODELS = {"UNet-Seq"}
@@ -148,6 +150,7 @@ def make_dataset(config, args, split):
         standardize=config.dataset.standardize,
         subset=bool(config.dataset.subset_size),
         region=getattr(config.dataset, "region", "CentralEurope"),
+        img_resolution=config.dataset.img_resolution,
         n_samples=(
             config.dataset.subset_size
             if config.dataset.subset_size
@@ -757,25 +760,29 @@ def main(args):
         f"{time.strftime('%m_%d_%H')}-{random_run_id:04d}"
     )
 
+    is_bicubic = config.model.model_type == "Bicubic"
+
     # Callbacks for saving model checkpoint
     callbacks = []
-    callbacks.append(
-        pl.callbacks.ModelCheckpoint(
-            dirpath=f"saved_models/{run_name}",
-            filename="min_val_loss",
-            monitor="val_loss",
-            mode="min",
-            save_top_k=1,
-            save_last=True,
+    if not is_bicubic:
+        callbacks.append(
+            pl.callbacks.ModelCheckpoint(
+                dirpath=f"saved_models/{run_name}",
+                filename="min_val_loss",
+                monitor="val_loss",
+                mode="min",
+                save_top_k=1,
+                save_last=True,
+            )
         )
-    )
-    
+
     if config.wandb_project is not None:
         logger = pl.loggers.WandbLogger(
             project=config.wandb_project, name=run_name, config=config
         )
     else:
-        logger = pl.loggers.TensorBoardLogger(
+        logger_class = pl.loggers.CSVLogger if is_bicubic else pl.loggers.TensorBoardLogger
+        logger = logger_class(
             save_dir="DebugLogs/", name=run_name
         )  # or CSVLogger
 
@@ -784,6 +791,12 @@ def main(args):
     # If doing pure autoencoder training (kl_beta = 0), the prior network is not
     # used at all in producing the loss. This is desired, but DDP complains.
     strategy = "ddp"
+    if is_bicubic:
+        # DDP requires trainable parameters. Use one device for this baseline,
+        # including on CPU-only hosts.
+        strategy = "auto"
+        devices = 1
+        num_nodes = 1
     # strategy = "auto"
 
     trainer = pl.Trainer(
@@ -796,6 +809,7 @@ def main(args):
         logger=logger,
         log_every_n_steps=1,
         callbacks=callbacks,
+        enable_checkpointing=not is_bicubic,
         check_val_every_n_epoch=args.val_interval,
         precision=args.precision,
         # default_root_dir=local_tmp,

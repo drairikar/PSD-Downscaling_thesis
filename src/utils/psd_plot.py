@@ -57,12 +57,15 @@ MODEL_PATHS: Dict[str, pathlib.Path] = {
         "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/"
         "inference_outputs/UNO_final-UNO-09_12_23-2417/files"
     ),
+    "FNO_175": pathlib.Path(
+        "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/inference_outputs_resolution/test175/FNO-testv2-FNO-09_10_10-6674/files"
+    ),
 }
 
 # ERA5's nominal longitudinal grid spacing. The effective CERRA spacing below
 # is scaled by the ratio of the ERA5 and CERRA longitudinal grid sizes.
 ERA5_DX_DEG = 0.25
-OUT_DIR = pathlib.Path("plot_tests_thesis")
+OUT_DIR = pathlib.Path("plot_tests_thesis_res")
 BATCH_SIZE = 32
 
 SERIES_STYLE = {

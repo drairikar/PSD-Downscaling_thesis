@@ -7,10 +7,10 @@ model: FNO                 # Model architecture
 subset_ds: 0                   # 0 = full dataset, >0 = subset size
 seed: 32
 n_workers: 16                    # Dataloader workers
-load: null
+load: /home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/saved_models/FNO-Iberia-FNO-10_04_16-1105/min_val_loss.ckpt
 restore_opt: 0                    # 0 = do not restore optimizer
 precision: "16-mixed"              # 32 | 16 | 16-mixed | bf16
-eval: null                   # val | test | null → train
+eval: test                   # val | test | null → train
 wandb_project: finetune
 run_name: FNO-Iberia     # Optional run name
 # =========================
@@ -48,4 +48,4 @@ init_lambda: 0.0
 max_lambda: 0.0001
 loss_type: 'Fourier_Carlo'
 resume: null
-savepreds_path: null
+savepreds_path: "/home/csaccardi1/Devashish_thesis/PSD-Downscaling_thesis/inference_outputs_iberia"

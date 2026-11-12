@@ -1,6 +1,7 @@
 """Single-frame ERA5-to-CERRA datasets."""
 
 import os
+from numbers import Integral
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,9 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
     and validation return ``(conditioning, target)``; testing additionally
     returns normalization statistics and a timestamp name, as expected by the
     deterministic model wrappers.
+
+    ``img_resolution`` optionally coarsens the full region by exact block
+    averaging, using the same blocks for dynamic fields and orography.
     """
 
     def __init__(
@@ -33,6 +37,7 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
         cerra_vars=("u10", "v10", "t2m"),
         era5_vars=("u10", "v10", "t2m"),
         n_samples=None,
+        img_resolution=None,
     ):
         super().__init__()
 
@@ -168,12 +173,45 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
                 f"dimensions, got {orography.shape}."
             )
 
-        self.orography = torch.from_numpy(orography).unsqueeze(0)
+        self.native_size = tuple(orography.shape)
+        self.output_size = (
+            self.native_size if img_resolution is None else tuple(img_resolution)
+        )
+        if len(self.output_size) != 2 or any(
+            isinstance(size, bool) or not isinstance(size, Integral) or size <= 0
+            for size in self.output_size
+        ):
+            raise ValueError("img_resolution must contain two positive integers.")
+        if any(
+            native % requested != 0
+            for native, requested in zip(self.native_size, self.output_size)
+        ):
+            raise ValueError(
+                f"Requested resolution {self.output_size} must divide "
+                f"the native resolution {self.native_size} exactly."
+            )
+        self.coarsen_factor = tuple(
+            native // requested
+            for native, requested in zip(self.native_size, self.output_size)
+        )
+
+        self.orography = self._coarsen(
+            torch.from_numpy(orography).unsqueeze(0)
+        )
         if self.standardize:
             self.orography = (
                 self.orography - self.orography_mean
             ) / self.orography_std
-        self.output_size = tuple(self.orography.shape[-2:])
+
+    def _coarsen(self, frame):
+        """Average [channels, height, width] over aligned spatial blocks."""
+        if self.coarsen_factor == (1, 1):
+            return frame
+        return F.avg_pool2d(
+            frame.unsqueeze(0),
+            kernel_size=self.coarsen_factor,
+            stride=self.coarsen_factor,
+        ).squeeze(0)
 
     @staticmethod
     def _validate_time(time, dataset_name):
@@ -213,16 +251,19 @@ class ERA5toCERRA2(torch.utils.data.Dataset):
 
         sample_era5 = F.interpolate(
             sample_era5.unsqueeze(0),
-            size=self.output_size,
+            size=self.native_size,
             mode="bicubic",
             align_corners=False,
         ).squeeze(0)
 
-        if sample_CERRA.shape[-2:] != self.output_size:
+        if sample_CERRA.shape[-2:] != self.native_size:
             raise ValueError(
                 f"CERRA frame has shape {sample_CERRA.shape[-2:]}, "
-                f"but static data have shape {self.output_size}."
+                f"but static data have shape {self.native_size}."
             )
+
+        sample_CERRA = self._coarsen(sample_CERRA)
+        sample_era5 = self._coarsen(sample_era5)
 
         if self.standardize:
             sample_CERRA = (

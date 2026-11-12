@@ -1,0 +1,19 @@
+# No training or checkpoint is needed. Run with main.py --config <this file>.
+model: Bicubic
+eval: test
+dataset_cerra: /projects/0/prjs0951/Carlo/zz_processed_data_new/CERRA
+dataset_era5: /projects/0/prjs0951/Carlo/zz_processed_data_new/ERA5
+region: Iberia
+img_in_channels: 4
+img_out_channels: 3
+img_resolution: [350, 350]
+standardize: true
+subset_ds: 0
+batch_size: 8
+n_workers: 4
+precision: "32"
+seed: 32
+wandb_project: null
+run_name: bicubic-Iberia-350
+# Use separate roots for different regions/resolutions to avoid overwriting.
+savepreds_path: inference_outputs_iberia/bicubic/Iberia/350
